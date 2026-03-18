@@ -28,7 +28,8 @@ class StaffController extends Controller
             'role' => $request->role === 'manager' ? UserRole::MANAGER : UserRole::CASHIER,
         ]);
 
-        $shop->users()->attach($user->id);
+        // Use the staff() relationship instead of users()
+        $shop->staff()->attach($user->id);
 
         return back()->with('success', ucfirst($request->role) . ' created and attached to shop!');
     }
@@ -38,7 +39,7 @@ class StaffController extends Controller
      */
     public function destroyStaff(Shop $shop, User $user)
     {
-        $shop->users()->detach($user->id);
+        $shop->staff()->detach($user->id);
         $user->delete();
 
         return back()->with('success', 'Staff member fired successfully!');
@@ -55,8 +56,8 @@ class StaffController extends Controller
 
         $userId = $request->user_id;
 
-        $fromShop->users()->detach($userId);
-        $toShop->users()->syncWithoutDetaching([$userId]);
+        $fromShop->staff()->detach($userId);
+        $toShop->staff()->syncWithoutDetaching([$userId]);
 
         return back()->with('success', 'Staff moved successfully!');
     }
@@ -71,7 +72,7 @@ class StaffController extends Controller
         ]);
 
         // Ensure the user actually belongs to this shop
-        if (!$shop->users()->where('user_id', $user->id)->exists()) {
+        if (!$shop->staff()->where('user_id', $user->id)->exists()) {
             return back()->withErrors(['user' => 'This staff member does not belong to the selected shop']);
         }
 

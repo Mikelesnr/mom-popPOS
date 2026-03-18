@@ -16,7 +16,10 @@ class DashboardController extends Controller
         return match ($user->role) {
             UserRole::OWNER   => Inertia::render('Dashboard/Owner', [
                 'auth' => ['user' => $user],
-                'shops' => Shop::where('owner_id', $user->id)->get(),
+                // Load shops AND their staff
+                'shops' => Shop::with('staff')
+                    ->where('owner_id', $user->id)
+                    ->get(),
             ]),
             UserRole::MANAGER => Inertia::render('Dashboard/Manger', ['auth' => ['user' => $user]]),
             UserRole::ADMIN   => Inertia::render('Dashboard/Admin', ['auth' => ['user' => $user]]),

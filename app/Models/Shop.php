@@ -17,6 +17,6 @@ class Shop extends Model
 
     public function staff(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'shop_user');
+        return $this->belongsToMany(User::class, 'shop_users');
     }
 }

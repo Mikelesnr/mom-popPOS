@@ -6,7 +6,7 @@ export default function ShopItem({ shop }) {
         <li>
             <span className="font-semibold">{shop.name}</span>
             <div className="ml-4 mt-2">
-                <StaffList staff={shop.users || []} shopId={shop.id} />
+                <StaffList staff={shop.staff || []} shopId={shop.id} />
             </div>
         </li>
     );
