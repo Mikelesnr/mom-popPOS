@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'admin' => [
+        'name' => env('APP_ADMIN_NAME', 'Default Admin'),
+        'email' => env('APP_ADMIN_EMAIL'),
+        'password' => env('APP_ADMIN_PASSWORD'),
+        'pin' => env('APP_ADMIN_PIN'),
+    ],
+
 ];

@@ -1,45 +1,37 @@
 <?php
+// app/Models/User.php
 
 namespace App\Models;
 
 use App\Enums\UserRole;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use App\Models\Shop;
+use Illuminate\Support\Facades\Hash;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory, Notifiable, HasUuids;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
     protected $fillable = [
+        'shop_id', // Nullable: The current active workplace roster location for shifts
         'name',
         'email',
         'password',
         'role',
+        'pin',
     ];
 
-    /**
-     * The attributes that should be hidden for arrays.
-     *
-     * @var array<int, string>
-     */
     protected $hidden = [
         'password',
         'remember_token',
+        'pin',
     ];
 
-    /**
-     * The attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
     protected function casts(): array
     {
         return [
@@ -49,13 +41,34 @@ class User extends Authenticatable
         ];
     }
 
-    public function shopsOwned()
+    /**
+     * REAL-WORLD PARITY RELATIONSHIP:
+     * Many-to-Many mapping for multi-owner partnerships across multiple businesses.
+     */
+    public function shopsOwned(): BelongsToMany
     {
-        return $this->hasMany(Shop::class, 'owner_id');
+        return $this->belongsToMany(Shop::class, 'shop_owners', 'user_id', 'shop_id')
+                    ->withTimestamps();
     }
 
-    public function shops()
+    /**
+     * Staff roster context. The physical venue where this user executes shifts.
+     */
+    public function shop(): BelongsTo
     {
-        return $this->belongsToMany(Shop::class, 'shop_users');
+        return $this->belongsTo(Shop::class, 'shop_id');
+    }
+
+    public function shifts(): HasMany { return $this->hasMany(Shift::class, 'user_id'); }
+    public function wasteLogs(): HasMany { return $this->hasMany(WasteLog::class, 'user_id'); }
+
+    public function hasRole(UserRole $role): bool
+    {
+        return $this->role === $role;
+    }
+
+    public function setPinAttribute($value)
+    {
+        $this->attributes['pin'] = $value ? Hash::make($value) : null;
     }
 }

@@ -41,7 +41,6 @@ class RegisteredUserController extends Controller
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
-            "role" => 'owner', // default role for new registrations
         ]);
 
         event(new Registered($user));
@@ -49,5 +48,33 @@ class RegisteredUserController extends Controller
         Auth::login($user);
 
         return redirect(route('dashboard', absolute: false));
+    }
+
+    public function storeApi(Request $request): JsonResponse
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|lowercase|email|max:255|unique:' . User::class,
+            'password' => ['required', 'confirmed', Rules\Password::defaults()],
+            'pin' => ['nullable', 'string', 'size:4'], // Assuming 4-digit PIN
+        ]);
+
+        $user = User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'password' => Hash::make($request->password),
+            'pin' => $request->pin, // Model mutator will hash this
+            'role' => $request->role ?? 'cashier', // Default to cashier
+        ]);
+
+        event(new Registered($user));
+
+        // Create a Sanctum token for the terminal to use
+        $token = $user->createToken('pos-terminal-token')->plainTextToken;
+
+        return response()->json([
+            'user' => $user->makeHidden(['password', 'pin', 'remember_token']),
+            'token' => $token,
+        ], 201);
     }
 }
