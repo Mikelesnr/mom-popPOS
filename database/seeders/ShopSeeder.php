@@ -6,6 +6,7 @@ use App\Models\Shop;
 use App\Models\Category;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 
 class ShopSeeder extends Seeder
 {
@@ -27,7 +28,10 @@ class ShopSeeder extends Seeder
             foreach ($categories as $catName) {
                 Category::firstOrCreate([
                     'shop_id' => $shop->id,
-                    'name' => $catName,
+                    'name'    => $catName,
+                ], [
+                    // Explicitly pass the slug here so MySQL gets it instantly on insertion
+                    'slug'    => Str::slug($catName), 
                 ]);
             }
         }
