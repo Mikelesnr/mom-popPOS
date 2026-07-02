@@ -1,0 +1,68 @@
+[
+  {
+    "id": "77777777-7777-4000-d000-000000000001",
+    "category_id": "88888888-8888-4000-c000-000000000001",
+    "name": "Jameson Irish Whiskey 750ml",
+    "cost_price": 25.00,
+    "selling_price": 45.00,
+    "is_perishable": false,
+    "bottle_specs": {
+      "is_weighable": true,
+      "capacity_ml": 750,
+      "tare_weight_g": 450,
+      "gross_weight_g": 1160
+    }
+  },
+  {
+    "id": "77777777-7777-4000-d000-000000000002",
+    "category_id": "88888888-8888-4000-c000-000000000001",
+    "name": "Klipdrift Export Brandy 750ml",
+    "cost_price": 18.00,
+    "selling_price": 35.00,
+    "is_perishable": false,
+    "bottle_specs": {
+      "is_weighable": true,
+      "capacity_ml": 750,
+      "tare_weight_g": 430,
+      "gross_weight_g": 1140
+    }
+  },
+  {
+    "id": "77777777-7777-4000-d000-000000000003",
+    "category_id": "88888888-8888-4000-c000-000000000001",
+    "name": "Captain Morgan Dark Rum 750ml",
+    "cost_price": 20.00,
+    "selling_price": 40.00,
+    "is_perishable": false,
+    "bottle_specs": {
+      "is_weighable": true,
+      "capacity_ml": 750,
+      "tare_weight_g": 440,
+      "gross_weight_g": 1150
+    }
+  },
+  {
+    "id": "77777777-7777-4000-d000-000000000004",
+    "category_id": "88888888-8888-4000-c000-000000000002",
+    "name": "Zambezi Lager 340ml",
+    "cost_price": 1.10,
+    "selling_price": 2.50,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-4000-d000-000000000005",
+    "category_id": "88888888-8888-4000-c000-000000000003",
+    "name": "Savanna Dry 330ml",
+    "cost_price": 1.40,
+    "selling_price": 3.00,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-4000-d000-000000000006",
+    "category_id": "88888888-8888-4000-c000-000000000004",
+    "name": "Coca-Cola 330ml Can",
+    "cost_price": 0.50,
+    "selling_price": 1.50,
+    "is_perishable": true
+  }
+]

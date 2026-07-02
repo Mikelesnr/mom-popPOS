@@ -9,3 +9,11 @@ Route::get('/user', function (Request $request) {
 
 // Import your custom auth routes
 require __DIR__ . '/auth_api.php';
+
+// Guarded Terminal Operations
+Route::middleware('auth:sanctum')->group(function () {
+    
+    // IMPORT: Pull in terminal sync routing cleanly
+    require __DIR__.'/inventory_api.php';
+    
+});

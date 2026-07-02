@@ -10,8 +10,13 @@ return new class extends Migration
     {
         Schema::create('stocks', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('product_id')->unique()->constrained('products')->cascadeOnDelete();
-            $table->decimal('quantity', 10, 3)->default(0.000); // Precision matching for weights/fractions
+            $table->foreignUuid('product_id')->constrained('products')->cascadeOnDelete();
+            
+            $table->decimal('opening_stock', 10, 3)->default(0.000);
+            $table->decimal('stock_added', 10, 3)->default(0.000);
+            $table->decimal('expected_stock', 10, 3)->default(0.000); // Opening + Added - Sales - Waste
+            $table->decimal('physical_count', 10, 3)->default(0.000);  // Filled by the worker at EOD
+            
             $table->timestamps();
         });
     }

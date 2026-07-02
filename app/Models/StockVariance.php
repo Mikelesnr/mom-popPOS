@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class Stock extends Model
+class StockVariance extends Model
 {
     use HasUuids;
 
@@ -16,11 +16,9 @@ class Stock extends Model
      * @var array<int, string>
      */
     protected $fillable = [
+        'shop_id',
         'product_id',
-        'opening_stock',
-        'stock_added',
-        'expected_stock',
-        'physical_count',
+        'variance', // Pure calculation result only (Negative = Shortage, Positive = Overage)
     ];
 
     /**
@@ -31,15 +29,20 @@ class Stock extends Model
     protected function casts(): array
     {
         return [
-            'opening_stock' => 'decimal:3',
-            'stock_added' => 'decimal:3',
-            'expected_stock' => 'decimal:3',
-            'physical_count' => 'decimal:3',
+            'variance' => 'decimal:3', // High-precision matching for fractional weights or item metrics
         ];
     }
 
     /**
-     * The master catalog item this stock row tracks.
+     * Multi-tenancy context relation.
+     */
+    public function shop(): BelongsTo
+    {
+        return $this->belongsTo(Shop::class, 'shop_id');
+    }
+
+    /**
+     * The catalog item that suffered this specific shortage or overage.
      */
     public function product(): BelongsTo
     {
