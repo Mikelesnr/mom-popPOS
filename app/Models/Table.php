@@ -16,6 +16,7 @@ class Table extends Model
      * @var array<int, string>
      */
     protected $fillable = [
+        'id',               // Unique identifier for the table/tab
         'shift_id',         // Bound directly to the active operational shift session
         'name',            // e.g., 'Table 4', 'Bar Tab - John Doe', 'VIP Lounge'
         'current_order_id' // Nullable: Points to the active open order tracking the tab

@@ -1,45 +1,38 @@
-const DB_NAME = "FOHTerminalDB";
-const DB_VERSION = 1;
+import Dexie from "dexie";
 
-export const initDB = () => {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
+// 1. Initialize the database
+export const db = new Dexie("MomnPopPWA");
 
-        request.onupgradeneeded = (event) => {
-            const db = event.target.result;
-            // Key by shop_id to isolate multi-tenant data safely
-            if (!db.objectStoreNames.contains("catalog")) {
-                db.createObjectStore("catalog", { keyPath: "shop_id" });
-            }
-        };
+db.version(1).stores({
+    catalogs: "shop_id, menu, shot_sizes, synced_at",
+    orders: "id, shift_id, table_id, total_amount, payment_method, status, created_at, synced_at",
+    tables: "id, shift_id, name, current_order_id, synced_at",
+    order_items:
+        "id, order_id, product_id, quantity, unit_price, subtotal, shot_ratio, synced_at",
+});
 
-        request.onsuccess = (event) => resolve(event.target.result);
-        request.onerror = (event) => reject(event.target.error);
-    });
-};
-
+/**
+ * Saves or updates the catalog for a specific shop.
+ * Dexie's .put() handles both create and update automatically.
+ */
 export const saveCatalogLocal = async (shopId, data) => {
-    const db = await initDB();
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction(["catalog"], "readwrite");
-        const store = transaction.objectStore("catalog");
-        // ✅ Use the UUID string directly
-        store.put({ shop_id: shopId, ...data });
-
-        transaction.oncomplete = () => resolve(true);
-        transaction.onerror = () => reject(transaction.error);
+    return await db.catalogs.put({
+        shop_id: shopId,
+        ...data,
+        synced_at: data.synced_at || new Date().toISOString(),
     });
 };
 
+/**
+ * Retrieves the catalog for a specific shop.
+ */
 export const getCatalogLocal = async (shopId) => {
-    const db = await initDB();
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction(["catalog"], "readonly");
-        const store = transaction.objectStore("catalog");
-        // ✅ Query with the UUID string
-        const request = store.get(shopId);
+    return await db.catalogs.get(shopId);
+};
 
-        request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => reject(request.error);
-    });
+/**
+ * Example of how to add an order to the new transactional store
+ */
+export const saveOrderLocal = async (orderData) => {
+    return await db.orders.put(orderData);
 };

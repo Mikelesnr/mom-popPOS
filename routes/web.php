@@ -28,7 +28,11 @@ Route::middleware('auth')->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
+    // Register Inventory Sub-Router
     require __DIR__.'/inventory_pwa.php';
+
+    // Register Sales Sub-Router
+    require __DIR__.'/sales_pwa.php';
 });
 
 require __DIR__.'/auth.php';

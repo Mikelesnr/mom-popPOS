@@ -21,6 +21,7 @@ class Bottle extends Model
         'capacity_ml',
         'tare_weight_g',
         'gross_weight_g',
+        'bottle_selling_price',
     ];
 
     /**

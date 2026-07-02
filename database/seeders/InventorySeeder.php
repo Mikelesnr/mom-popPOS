@@ -69,8 +69,8 @@ class InventorySeeder extends Seeder
 
         // 4. Populate standard multi-tenant uniform pour requirements
         $shotSizes = [
-            ['name' => 'Single Pour', 'size_ml' => 25],
-            ['name' => 'Double Pour', 'size_ml' => 50],
+            ['name' => 'Single', 'size_ml' => 25],
+            ['name' => 'Double', 'size_ml' => 50],
         ];
 
         foreach ($shotSizes as $shot) {

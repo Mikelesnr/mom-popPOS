@@ -15,6 +15,7 @@ return new class extends Migration
             $table->integer('capacity_ml');
             $table->integer('tare_weight_g');
             $table->integer('gross_weight_g');
+            $table->decimal('bottle_selling_price', 10, 2)->nullable();
             $table->timestamps();
         });
     }

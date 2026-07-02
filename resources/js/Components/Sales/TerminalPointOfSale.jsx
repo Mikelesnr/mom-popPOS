@@ -73,42 +73,110 @@ export default function TerminalPointOfSale() {
         loadTerminalData();
     }, [shopId]);
 
-    const addToCart = (product, isShot = false, shotSizeObj = null) => {
-        setCart((currentCart) => {
-            const cartItemId = isShot
-                ? `${product.id}-shot-${shotSizeObj.id}`
-                : product.id;
-            const existingIndex = currentCart.findIndex(
-                (item) => item.cartId === cartItemId,
-            );
-            let price = parseFloat(product.selling_price);
-            let displayName = product.name;
+    // TerminalPointOfSale_2.jsx snippet
 
-            if (isShot && shotSizeObj) {
+    const addToCart = (product, selectionType, quantityOrShotSizeObj) => {
+        setCart((currentCart) => {
+            let cartItemId, price, displayName, quantityToDeduct, baseData;
+
+            // --- LOGIC BRANCHES ---
+
+            if (selectionType === "unit") {
+                // Standard Retail Item (Coke, Beer)
+                cartItemId = product.id;
+                displayName = product.name;
+                price = parseFloat(product.selling_price);
+                quantityToDeduct = 1; // Simple unit deduction
+                baseData = null;
+            } else if (selectionType === "shot" && quantityOrShotSizeObj) {
+                // Pre-configured Single/Double (shotSizeObj)
+                const shotSize = quantityOrShotSizeObj;
+                cartItemId = `${product.id}-shot-${shotSize.id}`;
+                displayName = `${product.name} (${shotSize.name})`;
+
+                // Price Calculation (Ratio + markup logic)
                 const capacity = product.bottle?.capacity_ml || 750;
-                const ratio = shotSizeObj.size_ml / capacity;
+                const ratio = shotSize.size_ml / capacity;
+                // Use base product price for shot calculation
                 price = Number(
                     (parseFloat(product.selling_price) * ratio * 1.2).toFixed(
                         2,
                     ),
                 );
-                displayName = `${product.name} (${shotSizeObj.name})`;
+
+                // Inventory Reduction Calculation
+                quantityToDeduct = ratio; // e.g., 0.040
+                baseData = { shot_size_id: shotSize.id, type: "shot" };
+            } else if (
+                selectionType === "custom_shots" &&
+                typeof quantityOrShotSizeObj === "number"
+            ) {
+                // Cashier typed exact number of shots on keypad
+                const numShots = quantityOrShotSizeObj;
+                // Arbitrary ID to distinguish it from Single/Double buttons
+                cartItemId = `${product.id}-custom-shots-${numShots}-${Date.now()}`;
+                displayName = `${product.name} (${numShots} x Custom Shot)`;
+
+                // Price Calculation: Multiply standard shot price by custom quantity
+                // WARNING: This assumes a standard "single" price point for custom math.
+                const defaultCapacity = product.bottle?.capacity_ml || 750;
+                const defaultShotSizeML = 30; // Standardize default shot size for custom math
+                const ratio = defaultShotSizeML / defaultCapacity;
+                const unitShotPrice = Number(
+                    (parseFloat(product.selling_price) * ratio * 1.2).toFixed(
+                        2,
+                    ),
+                );
+                price = unitShotPrice * numShots;
+
+                // Inventory Reduction Calculation
+                quantityToDeduct = ratio * numShots;
+                baseData = { num_shots: numShots, type: "custom_shots" };
+            } else if (selectionType === "bottle") {
+                // Whole Bottle Button
+                cartItemId = `${product.id}-bottle-full`;
+                displayName = `${product.name} (Full Bottle)`;
+
+                // PRICE OVERRIDE: Use the new bottle_selling_price, or fallback to product price
+                price = product.bottle?.bottle_selling_price
+                    ? parseFloat(product.bottle.bottle_selling_price)
+                    : parseFloat(product.selling_price);
+
+                // Inventory Reduction Calculation
+                quantityToDeduct = 1.0; // Full deduction
+                baseData = { type: "bottle" };
             }
+
+            // --- CART IMMUTABILITY LOGIC (Shared) ---
+
+            const existingIndex = currentCart.findIndex(
+                (item) => item.cartId === cartItemId,
+            );
 
             if (existingIndex > -1) {
                 const updatedCart = [...currentCart];
-                updatedCart[existingIndex].quantity += 1;
+                const item = updatedCart[existingIndex];
+
+                // Update quantity
+                item.quantity += quantityToDeduct;
+
+                // Recalculate based on the per-unit price saved during initial add
+                item.totalLinePrice = item.pricePerUnit * item.quantity;
+
                 return updatedCart;
             }
 
+            // Create new immutable cart item
             return [
                 ...currentCart,
                 {
                     cartId: cartItemId,
-                    id: product.id,
+                    id: product.id, // product_id for backend
                     name: displayName,
-                    price: price,
-                    quantity: 1,
+                    pricePerUnit: price, // Store unit price
+                    quantity: quantityToDeduct, // Store fractional inventory deduction
+                    totalLinePrice: price, // Initial total price
+                    baseData: baseData, // Store metadata for sync (e.g., { type: 'shot', size: 'single' })
                 },
             ];
         });

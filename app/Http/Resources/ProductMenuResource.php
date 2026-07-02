@@ -26,6 +26,7 @@ class ProductMenuResource extends JsonResource
                     'capacity_ml' => (int) $this->bottle->capacity_ml,
                     'tare_weight_g' => (int) $this->bottle->tare_weight_g,
                     'gross_weight_g' => (int) $this->bottle->gross_weight_g,
+                    'bottle_selling_price' => $this->bottle->bottle_selling_price !== null ? (float) $this->bottle->bottle_selling_price : null,
                 ] : null;
             }),
         ];
