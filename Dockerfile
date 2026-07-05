@@ -7,7 +7,7 @@ COPY resources resources
 RUN npm install && npm run build
 
 # Stage 2: Laravel backend
-FROM php:8.2-fpm-alpine AS backend
+FROM php:8.3-fpm-alpine AS backend
 
 # Install system dependencies
 RUN apk add --no-cache \
@@ -20,6 +20,7 @@ RUN apk add --no-cache \
     libjpeg-turbo-dev \
     libwebp-dev \
     libxpm-dev \
+    libzip-dev \
     freetype-dev \
     oniguruma-dev \
     icu-dev \
