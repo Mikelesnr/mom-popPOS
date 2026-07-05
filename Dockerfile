@@ -32,7 +32,7 @@ RUN apk add --no-cache \
     supervisor
 
 # Install PHP extensions
-RUN docker-php-ext-install pdo pdo_pgsql mbstring exif pcntl bcmath gd intl
+RUN docker-php-ext-install pdo pdo_pgsql mbstring exif pcntl bcmath gd intl zip
 
 # Set working directory
 WORKDIR /var/www/html
