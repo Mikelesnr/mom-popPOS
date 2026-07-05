@@ -1,8 +1,11 @@
 # Stage 1: Build frontend assets
 FROM node:20-slim AS frontend
 WORKDIR /app
+
+# Copy only files needed for build
 COPY package.json vite.config.js tailwind.config.js postcss.config.js ./
 COPY resources resources
+
 RUN npm install && npm run build
 
 # Stage 2: Laravel backend
@@ -17,30 +20,30 @@ RUN apk add --no-cache \
 # Install PHP extensions
 RUN docker-php-ext-install pdo pdo_pgsql mbstring exif pcntl bcmath gd intl zip
 
-# Set working directory
 WORKDIR /var/www/html
 
 # Copy application code
 COPY . .
 
-# Set temporary environment variables to prevent boot failure during install
+# Environment variables to prevent artisan boot failures
 ENV APP_ENV=production
 ENV APP_DEBUG=false
 ENV LOG_CHANNEL=stderr
 
-# Ensure Laravel storage paths exist and are writable
+# Ensure storage paths exist and are writable
 RUN mkdir -p bootstrap/cache storage/framework/views storage/framework/sessions storage/framework/cache \
     && chmod -R 775 bootstrap/cache storage \
     && chown -R www-data:www-data bootstrap/cache storage
 
-# Copy frontend assets
+# Copy frontend build output
 COPY --from=frontend /app/public/build ./public/build
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-# Run install with --no-scripts first if errors persist, 
-# then run composer dump-autoload to finish
-RUN composer install --no-dev --optimize-autoloader --no-interaction
+
+# Install dependencies without running artisan scripts
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts \
+    && composer dump-autoload --optimize
 
 # Set permissions
 RUN chown -R www-data:www-data /var/www/html
