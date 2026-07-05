@@ -20,6 +20,7 @@ RUN apk add --no-cache \
     libjpeg-turbo-dev \
     libwebp-dev \
     libxpm-dev \
+    libzip-dev \
     freetype-dev \
     oniguruma-dev \
     icu-dev \

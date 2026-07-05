@@ -25,6 +25,10 @@ class AppServiceProvider extends ServiceProvider
     {
         Vite::prefetch(concurrency: 3);
 
+         if (config('app.env') === 'production') {
+            URL::forceScheme('https');
+        }
+
         // =========================================================================
         // 1. SYSTEM-TIER SUPERIUS GATES (Global Infrastructure Platform Access)
         // =========================================================================
