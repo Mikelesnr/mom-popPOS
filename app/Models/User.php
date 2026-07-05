@@ -21,6 +21,7 @@ class User extends Authenticatable
         'shop_id', // Nullable: The current active workplace roster location for shifts
         'name',
         'email',
+        'email_verified_at',
         'password',
         'role',
         'pin',

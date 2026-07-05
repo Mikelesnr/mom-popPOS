@@ -16,9 +16,9 @@ return new class extends Migration
             $table->uuid('id')->primary();
             $table->foreignUuid('shop_id')->nullable()->constrained('shops')->nullOnDelete();
             $table->string('name');
-            $table->string('email')->unique();
+            $table->string('email')->nullable()->unique();
+            $table->string('password')->nullable(); // Nullable because staff use PINs!
             $table->timestamp('email_verified_at')->nullable();
-            $table->string('password');
             $table->string('role')->default(UserRole::CASHIER->value);
             $table->string('pin')->nullable();
             $table->rememberToken();
@@ -32,8 +32,8 @@ return new class extends Migration
         });
 
         Schema::create('sessions', function (Blueprint $table) {
-            $table->uuid('id')->primary();
-            $table->foreignId('user_id')->nullable()->index();
+            $table->string('id')->primary();
+            $table->foreignUuid('user_id')->nullable()->index();
             $table->string('ip_address', 45)->nullable();
             $table->text('user_agent')->nullable();
             $table->longText('payload');

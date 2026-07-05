@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class OrderItem extends Model
+class StockVariance extends Model
 {
     use HasUuids;
 
@@ -16,12 +16,9 @@ class OrderItem extends Model
      * @var array<int, string>
      */
     protected $fillable = [
-        'id',
-        'order_id',
+        'shop_id',
         'product_id',
-        'quantity',
-        'unit_price',
-        'subtotal',
+        'variance', // Pure calculation result only (Negative = Shortage, Positive = Overage)
     ];
 
     /**
@@ -32,22 +29,20 @@ class OrderItem extends Model
     protected function casts(): array
     {
         return [
-            'quantity' => 'decimal:3', // Precision matching for fractional units 
-            'unit_price' => 'decimal:2',
-            'subtotal' => 'decimal:2',
+            'variance' => 'decimal:3', // High-precision matching for fractional weights or item metrics
         ];
     }
 
     /**
-     * The parent transaction envelope.
+     * Multi-tenancy context relation.
      */
-    public function order(): BelongsTo
+    public function shop(): BelongsTo
     {
-        return $this->belongsTo(Order::class, 'order_id');
+        return $this->belongsTo(Shop::class, 'shop_id');
     }
 
     /**
-     * The system catalog item being sold.
+     * The catalog item that suffered this specific shortage or overage.
      */
     public function product(): BelongsTo
     {

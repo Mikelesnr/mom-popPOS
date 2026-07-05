@@ -15,13 +15,24 @@ Route::get('/', function () {
 });
 
 Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
+    $user = auth()->user();
+
+    return Inertia::render('Dashboard', [
+        // Only pass down a shopId if the authenticated user is explicitly attached to a shop
+        'shopId' => $user->shop_id ?? null,
+    ]);
 })->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // Register Inventory Sub-Router
+    require __DIR__.'/inventory_pwa.php';
+
+    // Register Sales Sub-Router
+    require __DIR__.'/sales_pwa.php';
 });
 
 require __DIR__.'/auth.php';

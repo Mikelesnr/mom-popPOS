@@ -2,7 +2,7 @@
   {
     "id": "99999999-9999-4000-b000-000000000001",
     "name": "Harare Central Flagship",
-    "shop_type": "shop",
+    "shop_type": "restobar",
     "latitude": -17.829200,
     "longitude": 31.052200,
     "allowed_radius": 150
@@ -10,7 +10,7 @@
   {
     "id": "99999999-9999-4000-b000-000000000002",
     "name": "Avondale Restobar Edge",
-    "shop_type": "restobar",
+    "shop_type": "shop",
     "latitude": -17.785000,
     "longitude": 31.033100,
     "allowed_radius": 100

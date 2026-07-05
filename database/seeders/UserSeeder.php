@@ -24,6 +24,7 @@ class UserSeeder extends Seeder
                     'password' => Hash::make(config('services.admin.password')),
                     'role' => 'admin',
                     'pin' => config('services.admin.pin'),
+                    'email_verified_at' => now(),
                 ]
             );
         }
@@ -44,6 +45,7 @@ class UserSeeder extends Seeder
                     'password' => Hash::make($user['password']),
                     'role' => $user['role'],
                     'pin' => $user['pin'],
+                    'email_verified_at' => now(),
                 ]
             );
         }

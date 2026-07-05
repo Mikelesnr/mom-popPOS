@@ -17,7 +17,10 @@ class Stock extends Model
      */
     protected $fillable = [
         'product_id',
-        'quantity', // Tracks physical items available (e.g., 45.000 or 12.500)
+        'opening_stock',
+        'stock_added',
+        'expected_stock',
+        'physical_count',
     ];
 
     /**
@@ -28,7 +31,10 @@ class Stock extends Model
     protected function casts(): array
     {
         return [
-            'quantity' => 'decimal:3', // Employs decimal (10,3) precision for partial or fractional retail items [cite: 20]
+            'opening_stock' => 'decimal:3',
+            'stock_added' => 'decimal:3',
+            'expected_stock' => 'decimal:3',
+            'physical_count' => 'decimal:3',
         ];
     }
 
