@@ -53,7 +53,7 @@ COPY --from=frontend /app/public/build ./public/build
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-RUN composer install
+RUN composer install --no-interaction --ansi -vvv
 
 # Set permissions
 RUN chown -R www-data:www-data /var/www/html
