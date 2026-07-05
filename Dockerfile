@@ -2,7 +2,7 @@
 FROM node:20-slim AS frontend
 
 WORKDIR /app
-COPY package.json vite.config.js tailwind.config.js postcss.config.cjs ./
+COPY package.json vite.config.js tailwind.config.js postcss.config.js ./
 COPY resources resources
 RUN npm install && npm run build
 
