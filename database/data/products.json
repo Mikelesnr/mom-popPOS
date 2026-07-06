@@ -1,10 +1,12 @@
+
 [
   {
     "id": "77777777-7777-4000-d000-000000000001",
     "category_id": "88888888-8888-4000-c000-000000000001",
+    "unit_id": "11111111-1111-4000-a000-000000000007",
     "name": "Johnnie Walker Blue Label 750ml",
     "cost_price": 180.00,
-    "selling_price": 300.00,
+    "selling_price": 10.00,
     "is_perishable": false,
     "bottle_specs": {
       "is_weighable": true,
@@ -17,9 +19,10 @@
   {
     "id": "77777777-7777-4000-d000-000000000002",
     "category_id": "88888888-8888-4000-c000-000000000001",
+    "unit_id": "11111111-1111-4000-a000-000000000007",
     "name": "Cîroc Vodka 750ml",
     "cost_price": 35.00,
-    "selling_price": 60.00,
+    "selling_price": 3.00,
     "is_perishable": false,
     "bottle_specs": {
       "is_weighable": true,
@@ -32,9 +35,10 @@
   {
     "id": "77777777-7777-4000-d000-000000000003",
     "category_id": "88888888-8888-4000-c000-000000000001",
+    "unit_id": "11111111-1111-4000-a000-000000000006",
     "name": "Hennessy XO 700ml",
     "cost_price": 140.00,
-    "selling_price": 230.00,
+    "selling_price": 8.00,
     "is_perishable": false,
     "bottle_specs": {
       "is_weighable": true,
@@ -47,9 +51,10 @@
   {
     "id": "77777777-7777-4000-d000-000000000004",
     "category_id": "88888888-8888-4000-c000-000000000001",
+    "unit_id": "11111111-1111-4000-a000-000000000008",
     "name": "Grey Goose Vodka 1L",
     "cost_price": 32.00,
-    "selling_price": 55.00,
+    "selling_price": 2.50,
     "is_perishable": false,
     "bottle_specs": {
       "is_weighable": true,
@@ -62,9 +67,10 @@
   {
     "id": "77777777-7777-4000-d000-000000000005",
     "category_id": "88888888-8888-4000-c000-000000000001",
+    "unit_id": "11111111-1111-4000-a000-000000000007",
     "name": "Patrón Silver 750ml",
     "cost_price": 45.00,
-    "selling_price": 75.00,
+    "selling_price": 3.50,
     "is_perishable": false,
     "bottle_specs": {
       "is_weighable": true,
@@ -77,9 +83,10 @@
   {
     "id": "77777777-7777-4000-d000-000000000006",
     "category_id": "88888888-8888-4000-c000-000000000001",
+    "unit_id": "11111111-1111-4000-a000-000000000006",
     "name": "Tanqueray No. TEN 700ml",
     "cost_price": 28.00,
-    "selling_price": 50.00,
+    "selling_price": 2.50,
     "is_perishable": false,
     "bottle_specs": {
       "is_weighable": true,
@@ -92,9 +99,10 @@
   {
     "id": "77777777-7777-4000-d000-000000000007",
     "category_id": "88888888-8888-4000-c000-000000000001",
+    "unit_id": "11111111-1111-4000-a000-000000000006",
     "name": "Jack Daniel's Single Barrel 700ml",
     "cost_price": 40.00,
-    "selling_price": 70.00,
+    "selling_price": 3.00,
     "is_perishable": false,
     "bottle_specs": {
       "is_weighable": true,
@@ -107,9 +115,10 @@
   {
     "id": "77777777-7777-4000-d000-000000000008",
     "category_id": "88888888-8888-4000-c000-000000000001",
+    "unit_id": "11111111-1111-4000-a000-000000000007",
     "name": "Don Julio 1942 750ml",
     "cost_price": 160.00,
-    "selling_price": 260.00,
+    "selling_price": 9.00,
     "is_perishable": false,
     "bottle_specs": {
       "is_weighable": true,
@@ -122,9 +131,10 @@
   {
     "id": "77777777-7777-4000-d000-000000000009",
     "category_id": "88888888-8888-4000-c000-000000000001",
+    "unit_id": "11111111-1111-4000-a000-000000000006",
     "name": "The Macallan 18 Year 700ml",
     "cost_price": 220.00,
-    "selling_price": 380.00,
+    "selling_price": 12.00,
     "is_perishable": false,
     "bottle_specs": {
       "is_weighable": true,
@@ -137,9 +147,10 @@
   {
     "id": "77777777-7777-4000-d000-000000000010",
     "category_id": "88888888-8888-4000-c000-000000000001",
+    "unit_id": "11111111-1111-4000-a000-000000000006",
     "name": "Belvedere Vodka 700ml",
     "cost_price": 30.00,
-    "selling_price": 52.00,
+    "selling_price": 2.50,
     "is_perishable": false,
     "bottle_specs": {
       "is_weighable": true,
@@ -152,9 +163,10 @@
   {
     "id": "77777777-7777-4000-d000-000000000011",
     "category_id": "88888888-8888-4000-c000-000000000001",
+    "unit_id": "11111111-1111-4000-a000-000000000006",
     "name": "Bombay Sapphire Premier Cru 700ml",
     "cost_price": 34.00,
-    "selling_price": 58.00,
+    "selling_price": 2.80,
     "is_perishable": false,
     "bottle_specs": {
       "is_weighable": true,
@@ -165,142 +177,300 @@
     }
   },
   {
-    "id": "77777777-7777-4000-d000-000000000012",
-    "category_id": "88888888-8888-4000-c000-000000000001",
-    "name": "Diplomático Reserva Exclusiva 700ml",
-    "cost_price": 42.00,
-    "selling_price": 72.00,
-    "is_perishable": false,
-    "bottle_specs": {
-      "is_weighable": true,
-      "capacity_ml": 700,
-      "tare_weight_g": 640,
-      "gross_weight_g": 1340,
-      "bottle_selling_price": 72.00
-    }
-  },
-  {
-    "id": "77777777-7777-4000-d000-000000000002",
-    "category_id": "88888888-8888-4000-c000-000000000001",
-    "name": "Klipdrift Export Brandy 750ml",
-    "cost_price": 18.00,
-    "selling_price": 35.00,
-    "is_perishable": false,
-    "bottle_specs": {
-      "is_weighable": true,
-      "capacity_ml": 750,
-      "tare_weight_g": 430,
-      "gross_weight_g": 1140
-    }
-  },
-  {
-    "id": "77777777-7777-4000-d000-000000000003",
-    "category_id": "88888888-8888-4000-c000-000000000001",
-    "name": "Captain Morgan Dark Rum 750ml",
-    "cost_price": 20.00,
-    "selling_price": 40.00,
-    "is_perishable": false,
-    "bottle_specs": {
-      "is_weighable": true,
-      "capacity_ml": 750,
-      "tare_weight_g": 440,
-      "gross_weight_g": 1150
-    }
-  },
-  {
-    "id": "77777777-7777-5000-d000-000000000004",
+    "id": "77777777-7777-5000-d000-000000000201",
     "category_id": "88888888-8888-4000-c000-000000000002",
-    "name": "Zambezi Lager 340ml",
-    "cost_price": 1.10,
-    "selling_price": 2.50,
-    "is_perishable": true
-  },
-  {
-    "id": "77777777-7777-5000-d000-000000000007",
-    "category_id": "88888888-8888-4000-c000-000000000002",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
     "name": "Castle Lager 340ml",
     "cost_price": 1.15,
     "selling_price": 2.60,
     "is_perishable": true
   },
   {
-    "id": "77777777-7777-5000-d000-000000000008",
+    "id": "77777777-7777-5000-d000-000000000202",
     "category_id": "88888888-8888-4000-c000-000000000002",
-    "name": "Heineken 330ml Bottle",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Zambezi Lager 340ml",
+    "cost_price": 1.10,
+    "selling_price": 2.50,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000203",
+    "category_id": "88888888-8888-4000-c000-000000000002",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Heineken 330ml",
     "cost_price": 1.80,
     "selling_price": 3.50,
     "is_perishable": true
   },
   {
-    "id": "77777777-7777-5000-d000-000000000009",
+    "id": "77777777-7777-5000-d000-000000000204",
     "category_id": "88888888-8888-4000-c000-000000000002",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
     "name": "Guinness Foreign Extra Stout 330ml",
     "cost_price": 2.10,
     "selling_price": 4.20,
     "is_perishable": true
   },
   {
-    "id": "77777777-7777-5000-d000-000000000005",
+    "id": "77777777-7777-5000-d000-000000000205",
+    "category_id": "88888888-8888-4000-c000-000000000002",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Budweiser 330ml",
+    "cost_price": 1.50,
+    "selling_price": 3.00,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000206",
+    "category_id": "88888888-8888-4000-c000-000000000002",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Corona Extra 330ml",
+    "cost_price": 1.60,
+    "selling_price": 3.20,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000207",
+    "category_id": "88888888-8888-4000-c000-000000000002",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Stella Artois 330ml",
+    "cost_price": 1.70,
+    "selling_price": 3.40,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000208",
+    "category_id": "88888888-8888-4000-c000-000000000002",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Carlsberg 330ml",
+    "cost_price": 1.55,
+    "selling_price": 3.10,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000209",
+    "category_id": "88888888-8888-4000-c000-000000000002",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Miller Genuine Draft 330ml",
+    "cost_price": 1.65,
+    "selling_price": 3.30,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000210",
+    "category_id": "88888888-8888-4000-c000-000000000002",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Beck's 330ml",
+    "cost_price": 1.60,
+    "selling_price": 3.20,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000211",
+    "category_id": "88888888-8888-4000-c000-000000000002",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Amstel Lager 330ml",
+    "cost_price": 1.50,
+    "selling_price": 3.00,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000212",
+    "category_id": "88888888-8888-4000-c000-000000000002",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Tiger Beer 330ml",
+    "cost_price": 1.70,
+    "selling_price": 3.40,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000213",
+    "category_id": "88888888-8888-4000-c000-000000000002",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Asahi Super Dry 330ml",
+    "cost_price": 1.80,
+    "selling_price": 3.60,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000301",
     "category_id": "88888888-8888-4000-c000-000000000003",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
     "name": "Savanna Dry 330ml",
     "cost_price": 1.40,
     "selling_price": 3.00,
     "is_perishable": true
   },
   {
-    "id": "77777777-7777-5000-d000-000000000010",
+    "id": "77777777-7777-5000-d000-000000000302",
     "category_id": "88888888-8888-4000-c000-000000000003",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
     "name": "Hunters Gold 330ml",
     "cost_price": 1.35,
     "selling_price": 2.90,
     "is_perishable": true
   },
   {
-    "id": "77777777-7777-5000-d000-000000000011",
+    "id": "77777777-7777-5000-d000-000000000303",
     "category_id": "88888888-8888-4000-c000-000000000003",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Hunters Dry 330ml",
+    "cost_price": 1.40,
+    "selling_price": 2.95,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000304",
+    "category_id": "88888888-8888-4000-c000-000000000003",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Strongbow Apple 330ml",
+    "cost_price": 1.50,
+    "selling_price": 3.10,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000305",
+    "category_id": "88888888-8888-4000-c000-000000000003",
+    "unit_id": "11111111-1111-4000-a000-000000000002",
     "name": "Rekorderlig Strawberry-Lime 500ml",
     "cost_price": 3.50,
     "selling_price": 7.00,
     "is_perishable": true
   },
   {
-    "id": "77777777-7777-5000-d000-000000000006",
+    "id": "77777777-7777-5000-d000-000000000306",
+    "category_id": "88888888-8888-4000-c000-000000000003",
+    "unit_id": "11111111-1111-4000-a000-000000000002",
+    "name": "Rekorderlig Mango-Raspberry 500ml",
+    "cost_price": 3.60,
+    "selling_price": 7.20,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000307",
+    "category_id": "88888888-8888-4000-c000-000000000003",
+    "unit_id": "11111111-1111-4000-a000-000000000002",
+    "name": "Bulmers Original 500ml",
+    "cost_price": 3.40,
+    "selling_price": 6.80,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000308",
+    "category_id": "88888888-8888-4000-c000-000000000003",
+    "unit_id": "11111111-1111-4000-a000-000000000002",
+    "name": "Woodchuck Amber 500ml",
+    "cost_price": 3.30,
+    "selling_price": 6.60,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000309",
+    "category_id": "88888888-8888-4000-c000-000000000003",
+    "unit_id": "11111111-1111-4000-a000-000000000002",
+    "name": "Kopparberg Pear 500ml",
+    "cost_price": 3.70,
+    "selling_price": 7.40,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000310",
+    "category_id": "88888888-8888-4000-c000-000000000003",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Somersby Apple 330ml",
+    "cost_price": 1.55,
+    "selling_price": 3.20,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000401",
     "category_id": "88888888-8888-4000-c000-000000000004",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
     "name": "Coca-Cola 330ml Can",
     "cost_price": 0.50,
     "selling_price": 1.50,
     "is_perishable": true
   },
   {
-    "id": "77777777-7777-5000-d000-000000000012",
+    "id": "77777777-7777-5000-d000-000000000402",
     "category_id": "88888888-8888-4000-c000-000000000004",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
     "name": "Sprite 330ml Can",
     "cost_price": 0.48,
     "selling_price": 1.45,
     "is_perishable": true
   },
   {
-    "id": "77777777-7777-5000-d000-000000000013",
+    "id": "77777777-7777-5000-d000-000000000403",
     "category_id": "88888888-8888-4000-c000-000000000004",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Fanta Orange 330ml Can",
+    "cost_price": 0.52,
+    "selling_price": 1.55,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000404",
+    "category_id": "88888888-8888-4000-c000-000000000004",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
     "name": "Stoney Ginger Beer 330ml Can",
     "cost_price": 0.55,
     "selling_price": 1.60,
     "is_perishable": true
   },
   {
-    "id": "77777777-7777-5000-d000-000000000014",
+    "id": "77777777-7777-5000-d000-000000000405",
     "category_id": "88888888-8888-4000-c000-000000000004",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Appletiser 330ml Can",
+    "cost_price": 1.20,
+    "selling_price": 2.80,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000406",
+    "category_id": "88888888-8888-4000-c000-000000000004",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Pepsi 330ml Can",
+    "cost_price": 0.50,
+    "selling_price": 1.50,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000407",
+    "category_id": "88888888-8888-4000-c000-000000000004",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Mountain Dew 330ml Can",
+    "cost_price": 0.55,
+    "selling_price": 1.65,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000408",
+    "category_id": "88888888-8888-4000-c000-000000000004",
+    "unit_id": "11111111-1111-4000-a000-000000000002",
     "name": "Red Bull Energy Drink 250ml",
     "cost_price": 1.90,
     "selling_price": 3.50,
     "is_perishable": true
   },
   {
-    "id": "77777777-7777-5000-d000-000000000015",
+    "id": "77777777-7777-5000-d000-000000000409",
     "category_id": "88888888-8888-4000-c000-000000000004",
-    "name": "Appletiser 330ml Can",
-    "cost_price": 1.20,
-    "selling_price": 2.80,
+    "unit_id": "11111111-1111-4000-a000-000000000002",
+    "name": "Monster Energy 500ml",
+    "cost_price": 2.20,
+    "selling_price": 4.20,
+    "is_perishable": true
+  },
+  {
+    "id": "77777777-7777-5000-d000-000000000410",
+    "category_id": "88888888-8888-4000-c000-000000000004",
+    "unit_id": "11111111-1111-4000-a000-000000000003",
+    "name": "Schweppes Tonic Water 330ml Can",
+    "cost_price": 0.60,
+    "selling_price": 1.70,
     "is_perishable": true
   }
 ]

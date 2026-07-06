@@ -1,9 +1,10 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import BottleOptionModal from "@/Components/Sales/Partials/BottleOptionModal";
+import { Product, ShotSize } from "@/Utils/contracts.js";
 
 export default function ProductGrid({
     filteredProducts,
-    shotSizes, // We need to pass this down
+    shotSizes,
     addToCart,
     activeColorClass,
 }) {
@@ -11,13 +12,11 @@ export default function ProductGrid({
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const handleProductClick = (product) => {
-        if (product.bottle) {
-            // It's a spirit/bottle, open selection options
+        if (product.bottle_specs) {
             setSelectedProduct(product);
             setIsModalOpen(true);
         } else {
-            // It's a standard retail item (e.g., Coke, beer), add immediately
-            addToCart(product, "unit", 1); // Using type/qty structure now
+            addToCart(product, "unit", 1);
         }
     };
 
@@ -31,7 +30,7 @@ export default function ProductGrid({
                         className={`... ${activeColorClass}`}
                     >
                         {product.name}
-                        {product.bottle && (
+                        {product.bottle_specs && (
                             <span className="block text-[9px] opacity-70">
                                 SPIRIT
                             </span>
@@ -40,13 +39,12 @@ export default function ProductGrid({
                 ))}
             </div>
 
-            {/* The Selection Modal */}
             {isModalOpen && selectedProduct && (
                 <BottleOptionModal
                     product={selectedProduct}
                     shotSizes={shotSizes}
                     onClose={() => setIsModalOpen(false)}
-                    onSelect={addToCart} // Pass the refined addToCart function
+                    onSelect={addToCart}
                 />
             )}
         </>

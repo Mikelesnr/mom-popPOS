@@ -4,18 +4,21 @@ import SearchAndTabs from "./Partials/SearchAndTabs";
 import ProductGrid from "./Partials/ProductGrid";
 import TicketCart from "./Partials/TicketCart";
 import { saveCatalogLocal, getCatalogLocal } from "@/Utils/db";
+import { Category, ShotSize, CartItem } from "@/Utils/contracts.js";
 
 export default function TerminalPointOfSale() {
     const { auth } = usePage().props;
     const shopId = auth.user.shop_id;
 
+    /** @type {Category[]} */
     const [categories, setCategories] = useState([]);
+    /** @type {ShotSize[]} */
     const [shotSizes, setShotSizes] = useState([]);
     const [activeCategory, setActiveCategory] = useState(null);
+    /** @type {CartItem[]} */
     const [cart, setCart] = useState([]);
     const [isSyncing, setIsSyncing] = useState(false);
 
-    // Color array to index category buttons dynamically
     const colorPalette = [
         "bg-blue-600 hover:bg-blue-700 text-white",
         "bg-amber-600 hover:bg-amber-700 text-white",
@@ -26,7 +29,6 @@ export default function TerminalPointOfSale() {
         "bg-orange-600 hover:bg-orange-700 text-white font-bold",
     ];
 
-    // Fetch master menu dataset from server and dump to IndexedDB
     const refreshCatalogFromServer = async () => {
         setIsSyncing(true);
         try {
@@ -34,7 +36,6 @@ export default function TerminalPointOfSale() {
             if (!response.ok) throw new Error("Network catalog fetch failed");
             const data = await response.json();
 
-            // 🔍 Debug log: see what categories/products are coming back
             console.log("Catalog response:", data);
 
             await saveCatalogLocal(shopId, {
@@ -52,7 +53,6 @@ export default function TerminalPointOfSale() {
         }
     };
 
-    // On component mount: try loading from local IndexedDB storage first
     useEffect(() => {
         const loadTerminalData = async () => {
             try {
@@ -63,7 +63,6 @@ export default function TerminalPointOfSale() {
                     if (localData.menu?.length > 0)
                         setActiveCategory(localData.menu[0].id);
                 } else {
-                    // Fallback to fetch immediately if DB is empty
                     await refreshCatalogFromServer();
                 }
             } catch (err) {
@@ -205,7 +204,6 @@ export default function TerminalPointOfSale() {
 
     return (
         <div className="flex flex-col md:flex-row h-[calc(100vh-140px)] gap-2 p-1 bg-slate-900 rounded-xl overflow-hidden">
-            {/* Left Touch-Input Container */}
             <div className="w-full md:w-3/4 flex flex-col p-2 bg-slate-800 space-y-2 h-full overflow-hidden">
                 <SearchAndTabs
                     categories={categories}
@@ -222,8 +220,6 @@ export default function TerminalPointOfSale() {
                     activeColorClass={activeColorClass}
                 />
             </div>
-
-            {/* Right Open Ticket View Panel */}
             <TicketCart
                 cart={cart}
                 updateQuantity={updateQuantity}

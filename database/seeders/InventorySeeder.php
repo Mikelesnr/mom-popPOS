@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\Bottle;
 use App\Models\ShotSize;
+use App\Models\Unit;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\File;
 
@@ -36,7 +37,21 @@ class InventorySeeder extends Seeder
             );
         }
 
-        // 3. Load and Seed Products & Bottles from JSON
+        // 3. Load and Seed Units from JSON
+        $unitsJson = File::get(database_path('data/units.json'));
+        $units = json_decode($unitsJson, true);
+
+        foreach ($units as $unitData) {
+            Unit::updateOrCreate(
+                ['id' => $unitData['id']],
+                [
+                    'name'            => $unitData['name'],
+                    'conversion_rate' => $unitData['conversion_rate'],
+                ]
+            );
+        }
+
+        // 4. Load and Seed Products & Bottles from JSON
         $productsJson = File::get(database_path('data/products.json'));
         $products = json_decode($productsJson, true);
 
@@ -46,6 +61,7 @@ class InventorySeeder extends Seeder
                 [
                     'shop_id'       => $shop->id,
                     'category_id'   => $productData['category_id'],
+                    'unit_id'       => $productData['unit_id'], // <-- attach unit
                     'name'          => $productData['name'],
                     'cost_price'    => $productData['cost_price'],
                     'selling_price' => $productData['selling_price'],
@@ -62,12 +78,13 @@ class InventorySeeder extends Seeder
                         'capacity_ml'    => $productData['bottle_specs']['capacity_ml'],
                         'tare_weight_g'  => $productData['bottle_specs']['tare_weight_g'],
                         'gross_weight_g' => $productData['bottle_specs']['gross_weight_g'],
+                        'bottle_selling_price' => $productData['bottle_specs']['bottle_selling_price'] ?? null,
                     ]
                 );
             }
         }
 
-        // 4. Populate standard multi-tenant uniform pour requirements
+        // 5. Populate standard multi-tenant uniform pour requirements
         $shotSizes = [
             ['name' => 'Single', 'size_ml' => 25],
             ['name' => 'Double', 'size_ml' => 50],

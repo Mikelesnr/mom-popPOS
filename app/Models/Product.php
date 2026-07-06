@@ -19,7 +19,8 @@ class Product extends Model
      */
     protected $fillable = [
         'shop_id',
-        'category_id', // Add this here
+        'category_id',
+        'unit_id',
         'name',
         'cost_price',
         'selling_price',
@@ -59,10 +60,10 @@ class Product extends Model
     /**
      * Standard retail or kitchen specific unit conversions.
      */
-    public function unit(): HasOne
-    {
-        return $this->hasOne(Unit::class, 'product_id');
-    }
+   public function unit(): BelongsTo
+{
+    return $this->belongsTo(Unit::class, 'unit_id');
+}
 
     /**
      * Audit trail for physical inventory losses.

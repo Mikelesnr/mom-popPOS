@@ -18,8 +18,11 @@ Route::get('/dashboard', function () {
     $user = auth()->user();
 
     return Inertia::render('Dashboard', [
-        // Only pass down a shopId if the authenticated user is explicitly attached to a shop
+        'auth' => [
+            'user' => $user,
+        ],
         'shopId' => $user->shop_id ?? null,
+        'shops' => $user->shops ?? [], // optional if owner dashboards need it
     ]);
 })->middleware(['auth', 'verified'])->name('dashboard');
 

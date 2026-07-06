@@ -1,5 +1,15 @@
 import React from "react";
+import { Category } from "@/Utils/contracts.js";
 
+/**
+ * @param {Object} props
+ * @param {Category[]} props.categories
+ * @param {string|null} props.activeCategory
+ * @param {Function} props.setActiveCategory
+ * @param {string[]} props.colorPalette
+ * @param {Function} props.refreshCatalog
+ * @param {boolean} props.isSyncing
+ */
 export default function SearchAndTabs({
     categories,
     activeCategory,
@@ -10,7 +20,7 @@ export default function SearchAndTabs({
 }) {
     return (
         <div className="flex items-center gap-2 border-b border-slate-700 pb-2 select-none">
-            {/* Categories Taps View */}
+            {/* Categories Tabs View */}
             <div className="flex-1 flex gap-1.5 overflow-x-auto py-1 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
                 {categories.map((category, index) => {
                     const isSelected = activeCategory === category.id;
