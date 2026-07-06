@@ -1,11 +1,8 @@
 # Stage 1: Build frontend assets
 FROM node:20-slim AS frontend
 WORKDIR /app
-
-# Copy only files needed for build
 COPY package.json vite.config.js tailwind.config.js postcss.config.js ./
 COPY resources resources
-
 RUN npm install && npm run build
 
 # Stage 2: Laravel backend
@@ -43,7 +40,7 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 # Install dependencies without running artisan scripts
 RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts \
-    && composer dump-autoload --optimize
+    && composer dump-autoload --optimize --no-scripts
 
 # Set permissions
 RUN chown -R www-data:www-data /var/www/html
