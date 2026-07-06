@@ -12,7 +12,8 @@ FROM php:8.3-fpm-alpine AS backend
 RUN apk add --no-cache \
     nginx curl zip unzip git libpng-dev libjpeg-turbo-dev \
     libwebp-dev libxpm-dev libzip-dev freetype-dev \
-    oniguruma-dev icu-dev bash shadow postgresql-dev
+    oniguruma-dev icu-dev bash shadow postgresql-dev \
+    supervisor
 
 # Install PHP extensions
 RUN docker-php-ext-install pdo pdo_pgsql mbstring exif pcntl bcmath gd intl zip
