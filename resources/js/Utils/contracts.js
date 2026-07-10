@@ -42,18 +42,32 @@
 
 /**
  * @typedef {Object} CartItem
- * @property {string} cartId - Unique identifier for cart line (product + type).
- * @property {string} id - Product ID (for backend sync).
- * @property {string} name - Display name (e.g., "Johnnie Walker (Single)").
- * @property {number} pricePerUnit - Price per unit/shot/bottle.
- * @property {number} quantity - Fractional deduction (e.g., 0.04 for a shot).
- * @property {number} totalLinePrice - Total price for this cart line.
- * @property {Object|null} baseData - Metadata (e.g., { type: 'shot', shot_size_id: 'uuid' }).
+ * @property {string} cartItemId - Unique identifier (product.id + '-' + metadata.type).
+ * @property {string} product_id - The ID of the product for backend sync.
+ * @property {string} name - Display name of the item.
+ * @property {number} quantity - The amount of units/shots.
+ * @property {number} unit_price - The price per individual unit/shot/bottle.
+ * @property {number} subtotal - The calculated line total (unit_price * quantity).
+ * @property {Object|null} metadata - Data regarding the type (e.g., { type: 'shot' }).
+ * @property {string|null} orderable_id - Reserved for backend polymorphic relation.
+ * @property {string|null} orderable_type - Reserved for backend polymorphic relation.
  */
+
+/**
+ * @typedef {Object} OrderItem
+ * @property {string} product_id
+ * @property {string} name
+ * @property {number} quantity
+ * @property {number} unit_price
+ * @property {number} subtotal
+ * @property {Object} metadata
+ */
+
+export const CartItem = {};
+export const OrderItem = {};
 
 export const Unit = {};
 export const BottleSpecs = {};
 export const Product = {};
 export const Category = {};
 export const ShotSize = {};
-export const CartItem = {};

@@ -3,12 +3,21 @@ import { usePage } from "@inertiajs/react";
 import SearchAndTabs from "./Partials/SearchAndTabs";
 import ProductGrid from "./Partials/ProductGrid";
 import TicketCart from "./Partials/TicketCart";
-import { saveCatalogLocal, getCatalogLocal } from "@/Utils/db";
+import MyOpenTables from "./Partials/MyOpenTables";
+import {
+    db,
+    saveCatalogLocal,
+    getCatalogLocal,
+    syncOrdersToServer,
+    syncTablesToServer,
+} from "@/Utils/db";
 import { Category, ShotSize, CartItem } from "@/Utils/contracts.js";
 
 export default function TerminalPointOfSale() {
     const { auth } = usePage().props;
     const shopId = auth.user.shop_id;
+    const [showTables, setShowTables] = useState(false);
+    const [activeTable, setActiveTable] = useState(null);
 
     /** @type {Category[]} */
     const [categories, setCategories] = useState([]);
@@ -36,8 +45,6 @@ export default function TerminalPointOfSale() {
             if (!response.ok) throw new Error("Network catalog fetch failed");
             const data = await response.json();
 
-            console.log("Catalog response:", data);
-
             await saveCatalogLocal(shopId, {
                 menu: data.menu,
                 shot_sizes: data.shot_sizes,
@@ -48,6 +55,42 @@ export default function TerminalPointOfSale() {
             if (data.menu?.length > 0) setActiveCategory(data.menu[0].id);
         } catch (err) {
             console.error("Catalog Sync Error:", err);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    const handleLoadTable = async (table) => {
+        // Correctly pull order items where orderable_id matches the table id
+        const items = await db.order_items
+            .where("orderable_id")
+            .equals(table.id)
+            .toArray();
+
+        const cartItems = items.map((item) => ({
+            cartItemId: item.id, // Keep ID consistent for updates
+            product_id: item.product_id,
+            name: item.name,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            subtotal: item.subtotal,
+            metadata: item.metadata,
+        }));
+
+        setCart(cartItems);
+        setActiveTable(table);
+    };
+
+    const performFullSync = async () => {
+        setIsSyncing(true);
+        try {
+            await syncOrdersToServer();
+            await syncTablesToServer();
+            await refreshCatalogFromServer();
+            alert("Sync complete!");
+        } catch (err) {
+            console.error("Sync failed:", err);
+            alert("Sync failed. Check your internet connection.");
         } finally {
             setIsSyncing(false);
         }
@@ -72,125 +115,42 @@ export default function TerminalPointOfSale() {
         loadTerminalData();
     }, [shopId]);
 
-    // TerminalPointOfSale_2.jsx snippet
+    /**
+     * Unified AddToCart Method
+     * This matches your OrderItem model structure (1:1).
+     * No conversion logic needed here; backend handles calculations.
+     */
 
-    const addToCart = (product, selectionType, quantityOrShotSizeObj) => {
+    const addToCart = (product, metadata, quantity = 1) => {
         setCart((currentCart) => {
-            let cartItemId, price, displayName, quantityToDeduct, baseData;
+            // Adding Date.now() to the ID makes every single click unique
+            const uniqueId = Date.now();
+            const cartItemId = `${product.id}-${metadata.type}-${uniqueId}`;
 
-            // --- LOGIC BRANCHES ---
+            const price =
+                metadata.type === "bottle"
+                    ? product.bottle_specs?.bottle_selling_price ||
+                      product.selling_price
+                    : metadata.type === "double"
+                      ? product.selling_price * 2
+                      : product.selling_price;
 
-            if (selectionType === "unit") {
-                // Standard Retail Item (Coke, Beer)
-                cartItemId = product.id;
-                displayName = product.name;
-                price = parseFloat(product.selling_price);
-                quantityToDeduct = 1; // Simple unit deduction
-                baseData = null;
-            } else if (selectionType === "shot" && quantityOrShotSizeObj) {
-                // Pre-configured Single/Double (shotSizeObj)
-                const shotSize = quantityOrShotSizeObj;
-                cartItemId = `${product.id}-shot-${shotSize.id}`;
-                displayName = `${product.name} (${shotSize.name})`;
-
-                // Price Calculation (Ratio + markup logic)
-                const capacity = product.bottle?.capacity_ml || 750;
-                const ratio = shotSize.size_ml / capacity;
-                // Use base product price for shot calculation
-                price = Number(
-                    (parseFloat(product.selling_price) * ratio * 1.2).toFixed(
-                        2,
-                    ),
-                );
-
-                // Inventory Reduction Calculation
-                quantityToDeduct = ratio; // e.g., 0.040
-                baseData = { shot_size_id: shotSize.id, type: "shot" };
-            } else if (
-                selectionType === "custom_shots" &&
-                typeof quantityOrShotSizeObj === "number"
-            ) {
-                // Cashier typed exact number of shots on keypad
-                const numShots = quantityOrShotSizeObj;
-                // Arbitrary ID to distinguish it from Single/Double buttons
-                cartItemId = `${product.id}-custom-shots-${numShots}-${Date.now()}`;
-                displayName = `${product.name} (${numShots} x Custom Shot)`;
-
-                // Price Calculation: Multiply standard shot price by custom quantity
-                // WARNING: This assumes a standard "single" price point for custom math.
-                const defaultCapacity = product.bottle?.capacity_ml || 750;
-                const defaultShotSizeML = 30; // Standardize default shot size for custom math
-                const ratio = defaultShotSizeML / defaultCapacity;
-                const unitShotPrice = Number(
-                    (parseFloat(product.selling_price) * ratio * 1.2).toFixed(
-                        2,
-                    ),
-                );
-                price = unitShotPrice * numShots;
-
-                // Inventory Reduction Calculation
-                quantityToDeduct = ratio * numShots;
-                baseData = { num_shots: numShots, type: "custom_shots" };
-            } else if (selectionType === "bottle") {
-                // Whole Bottle Button
-                cartItemId = `${product.id}-bottle-full`;
-                displayName = `${product.name} (Full Bottle)`;
-
-                // PRICE OVERRIDE: Use the new bottle_selling_price, or fallback to product price
-                price = product.bottle?.bottle_selling_price
-                    ? parseFloat(product.bottle.bottle_selling_price)
-                    : parseFloat(product.selling_price);
-
-                // Inventory Reduction Calculation
-                quantityToDeduct = 1.0; // Full deduction
-                baseData = { type: "bottle" };
-            }
-
-            // --- CART IMMUTABILITY LOGIC (Shared) ---
-
-            const existingIndex = currentCart.findIndex(
-                (item) => item.cartId === cartItemId,
-            );
-
-            if (existingIndex > -1) {
-                const updatedCart = [...currentCart];
-                const item = updatedCart[existingIndex];
-
-                // Update quantity
-                item.quantity += quantityToDeduct;
-
-                // Recalculate based on the per-unit price saved during initial add
-                item.totalLinePrice = item.pricePerUnit * item.quantity;
-
-                return updatedCart;
-            }
-
-            // Create new immutable cart item
+            // No 'existingIndex' check needed—we always return a new item
             return [
                 ...currentCart,
                 {
-                    cartId: cartItemId,
-                    id: product.id, // product_id for backend
-                    name: displayName,
-                    pricePerUnit: price, // Store unit price
-                    quantity: quantityToDeduct, // Store fractional inventory deduction
-                    totalLinePrice: price, // Initial total price
-                    baseData: baseData, // Store metadata for sync (e.g., { type: 'shot', size: 'single' })
+                    cartItemId: cartItemId,
+                    product_id: product.id,
+                    name: product.name,
+                    quantity: quantity,
+                    unit_price: parseFloat(price),
+                    subtotal: parseFloat(price) * quantity, // This is your total for the line
+                    metadata: metadata,
+                    orderable_id: null,
+                    orderable_type: null,
                 },
             ];
         });
-    };
-
-    const updateQuantity = (cartId, amount) => {
-        setCart((currentCart) =>
-            currentCart
-                .map((item) =>
-                    item.cartId === cartId
-                        ? { ...item, quantity: item.quantity + amount }
-                        : item,
-                )
-                .filter((item) => item.quantity > 0),
-        );
     };
 
     const activeCategoryData = categories.find((c) => c.id === activeCategory);
@@ -210,7 +170,7 @@ export default function TerminalPointOfSale() {
                     activeCategory={activeCategory}
                     setActiveCategory={setActiveCategory}
                     colorPalette={colorPalette}
-                    refreshCatalog={refreshCatalogFromServer}
+                    refreshCatalog={performFullSync}
                     isSyncing={isSyncing}
                 />
                 <ProductGrid
@@ -220,10 +180,28 @@ export default function TerminalPointOfSale() {
                     activeColorClass={activeColorClass}
                 />
             </div>
-            <TicketCart
-                cart={cart}
-                updateQuantity={updateQuantity}
+
+            <div className="w-full md:w-1/3 flex flex-col gap-2">
+                <TicketCart
+                    cart={cart}
+                    setCart={setCart}
+                    auth={auth}
+                    activeTable={activeTable}
+                    setActiveTable={setActiveTable}
+                />
+                <button
+                    onClick={() => setShowTables(true)}
+                    className="w-full bg-amber-500 text-white font-bold py-2 rounded-lg hover:bg-amber-600"
+                >
+                    View My Tables
+                </button>
+            </div>
+
+            <MyOpenTables
                 auth={auth}
+                isOpen={showTables}
+                onClose={() => setShowTables(false)}
+                onSelect={handleLoadTable}
             />
         </div>
     );

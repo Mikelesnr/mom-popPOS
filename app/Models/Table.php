@@ -2,39 +2,43 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use App\Enums\TableStatus;
 
 class Table extends Model
 {
-    use HasUuids;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
+    public $incrementing = false;
+    protected $keyType = 'string';
+
     protected $fillable = [
-        'id',               // Unique identifier for the table/tab
-        'shift_id',         // Bound directly to the active operational shift session
-        'name',            // e.g., 'Table 4', 'Bar Tab - John Doe', 'VIP Lounge'
-        'current_order_id' // Nullable: Points to the active open order tracking the tab
+        'id',
+        'shift_id',
+        'user_id',
+        'name',
+        'total_amount',
+        'payment_method',
+        'status',
     ];
 
-    /**
-     * The specific shift session tracking this running tab.
-     */
+    protected $casts = [
+        'status' => TableStatus::class,
+    ];
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
     public function shift(): BelongsTo
     {
         return $this->belongsTo(Shift::class, 'shift_id');
     }
 
-    /**
-     * The active open order/ledger line currently tied to this tab.
-     */
-    public function currentOrder(): BelongsTo
+    public function items(): MorphMany
     {
-        return $this->belongsTo(Order::class, 'current_order_id');
+        return $this->morphMany(OrderItem::class, 'orderable');
     }
 }

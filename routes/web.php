@@ -3,6 +3,7 @@
 use App\Http\Controllers\ProfileController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
+use App\Models\Shift;
 use Inertia\Inertia;
 
 Route::get('/', function () {
@@ -14,8 +15,18 @@ Route::get('/', function () {
     ]);
 });
 
+
 Route::get('/dashboard', function () {
     $user = auth()->user();
+
+    // Check if there is an open shift for this shop
+    $currentShift = null;
+    if ($user && $user->shop_id) {
+        $currentShift = Shift::where('shop_id', $user->shop_id)
+            ->whereNull('closed_at')
+            ->latest('opened_at')
+            ->first();
+    }
 
     return Inertia::render('Dashboard', [
         'auth' => [
@@ -23,8 +34,15 @@ Route::get('/dashboard', function () {
         ],
         'shopId' => $user->shop_id ?? null,
         'shops' => $user->shops ?? [], // optional if owner dashboards need it
+        'shift' => $currentShift ? [
+            'id' => $currentShift->id,
+            'opened_at' => $currentShift->opened_at,
+            'closed_at' => $currentShift->closed_at,
+            'user_id' => $currentShift->user_id,
+        ] : null,
     ]);
 })->middleware(['auth', 'verified'])->name('dashboard');
+
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -32,10 +50,10 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     // Register Inventory Sub-Router
-    require __DIR__.'/inventory_pwa.php';
+    require __DIR__ . '/inventory_pwa.php';
 
     // Register Sales Sub-Router
-    require __DIR__.'/sales_pwa.php';
+    require __DIR__ . '/sales_pwa.php';
 });
 
-require __DIR__.'/auth.php';
+require __DIR__ . '/auth.php';

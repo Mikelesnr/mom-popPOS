@@ -1,6 +1,7 @@
+// ProductGrid.jsx
 import React, { useState } from "react";
 import BottleOptionModal from "@/Components/Sales/Partials/BottleOptionModal";
-import { Product, ShotSize } from "@/Utils/contracts.js";
+import { NumericKeypad } from "@/Components/Shared/NumericKeypad"; // Update path as needed
 
 export default function ProductGrid({
     filteredProducts,
@@ -10,14 +11,24 @@ export default function ProductGrid({
 }) {
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isKeypadOpen, setIsKeypadOpen] = useState(false);
 
     const handleProductClick = (product) => {
         if (product.bottle_specs) {
             setSelectedProduct(product);
             setIsModalOpen(true);
         } else {
-            addToCart(product, "unit", 1);
+            // Instead of prompt, open the keypad
+            setSelectedProduct(product);
+            setIsKeypadOpen(true);
         }
+    };
+
+    const handleUnitConfirm = (qty) => {
+        if (qty > 0) {
+            addToCart(selectedProduct, { type: "unit" }, qty);
+        }
+        setIsKeypadOpen(false);
     };
 
     return (
@@ -30,22 +41,35 @@ export default function ProductGrid({
                         className={`... ${activeColorClass}`}
                     >
                         {product.name}
-                        {product.bottle_specs && (
-                            <span className="block text-[9px] opacity-70">
-                                SPIRIT
-                            </span>
-                        )}
                     </button>
                 ))}
             </div>
 
+            {/* Existing Bottle Modal */}
             {isModalOpen && selectedProduct && (
                 <BottleOptionModal
                     product={selectedProduct}
-                    shotSizes={shotSizes}
                     onClose={() => setIsModalOpen(false)}
                     onSelect={addToCart}
                 />
+            )}
+
+            {/* New Unit Keypad Modal */}
+            {isKeypadOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+                    <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
+                        <h2 className="font-bold mb-4 text-center">
+                            Quantity for {selectedProduct.name}
+                        </h2>
+                        <NumericKeypad onConfirm={handleUnitConfirm} />
+                        <button
+                            onClick={() => setIsKeypadOpen(false)}
+                            className="w-full mt-2 text-gray-500 text-sm"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
             )}
         </>
     );
