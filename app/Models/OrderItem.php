@@ -2,53 +2,38 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Enums\InventoryItemType;
 
 class OrderItem extends Model
 {
-    use HasUuids;
+    public $incrementing = false;
+    protected $keyType = 'string';
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
     protected $fillable = [
         'id',
-        'order_id',
+        'orderable_id',
+        'orderable_type',
+        'name',
         'product_id',
         'quantity',
         'unit_price',
         'subtotal',
+        'metadata',
     ];
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
-    protected function casts(): array
+    protected $casts = [
+        'metadata' => InventoryItemType::class,
+    ];
+
+
+    public function orderable(): MorphTo
     {
-        return [
-            'quantity' => 'decimal:3', // Precision matching for fractional units 
-            'unit_price' => 'decimal:2',
-            'subtotal' => 'decimal:2',
-        ];
+        return $this->morphTo();
     }
 
-    /**
-     * The parent transaction envelope.
-     */
-    public function order(): BelongsTo
-    {
-        return $this->belongsTo(Order::class, 'order_id');
-    }
-
-    /**
-     * The system catalog item being sold.
-     */
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class, 'product_id');

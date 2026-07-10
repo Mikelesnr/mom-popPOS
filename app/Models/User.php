@@ -49,7 +49,7 @@ class User extends Authenticatable
     public function shopsOwned(): BelongsToMany
     {
         return $this->belongsToMany(Shop::class, 'shop_owners', 'user_id', 'shop_id')
-                    ->withTimestamps();
+            ->withTimestamps();
     }
 
     /**
@@ -60,8 +60,24 @@ class User extends Authenticatable
         return $this->belongsTo(Shop::class, 'shop_id');
     }
 
-    public function shifts(): HasMany { return $this->hasMany(Shift::class, 'user_id'); }
-    public function wasteLogs(): HasMany { return $this->hasMany(WasteLog::class, 'user_id'); }
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class, 'user_id');
+    }
+
+    function tables(): HasMany
+    {
+        return $this->hasMany(Table::class, 'user_id');
+    }
+
+    public function shifts(): HasMany
+    {
+        return $this->hasMany(Shift::class, 'user_id');
+    }
+    public function wasteLogs(): HasMany
+    {
+        return $this->hasMany(WasteLog::class, 'user_id');
+    }
 
     public function hasRole(UserRole $role): bool
     {

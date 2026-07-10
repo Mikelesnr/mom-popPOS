@@ -1,19 +1,22 @@
 import Dexie from "dexie";
 
-// 1. Initialize the database
+// Initialize the database
 export const db = new Dexie("MomnPopPWA");
 
-db.version(1).stores({
-    catalogs: "shop_id, menu, shot_sizes, synced_at",
-    orders: "id, shift_id, table_id, total_amount, payment_method, status, created_at, synced_at",
-    tables: "id, shift_id, name, current_order_id, synced_at",
-    order_items:
-        "id, order_id, product_id, quantity, unit_price, subtotal, shot_ratio, synced_at",
+/**
+ * VERSION 6 SCHEMA
+ * 1. Added 'metadata.type' index to order_items for fast report generation.
+ * 2. Standardized indexes across all stores.
+ */
+db.version(7).stores({
+    catalogs: "shop_id",
+    orders: "id, shift_id, user_id, status, created_at, synced_at",
+    open_tables: "id, shift_id, user_id, status, created_at, synced_at",
+    order_items: "id, orderable_id, product_id, synced_at, metadata",
 });
 
 /**
- * Saves or updates the catalog for a specific shop.
- * Dexie's .put() handles both create and update automatically.
+ * CATALOG HELPERS
  */
 export const saveCatalogLocal = async (shopId, data) => {
     return await db.catalogs.put({
@@ -23,16 +26,231 @@ export const saveCatalogLocal = async (shopId, data) => {
     });
 };
 
-/**
- * Retrieves the catalog for a specific shop.
- */
 export const getCatalogLocal = async (shopId) => {
     return await db.catalogs.get(shopId);
 };
 
 /**
- * Example of how to add an order to the new transactional store
+ * ORDER & TABLE HELPERS
  */
 export const saveOrderLocal = async (orderData) => {
-    return await db.orders.put(orderData);
+    return await db.orders.put({
+        ...orderData,
+        synced_at: orderData.synced_at || null,
+        created_at: orderData.created_at || new Date().toISOString(),
+    });
+};
+
+export const saveTableLocal = async (tableData) => {
+    return await db.open_tables.put({
+        ...tableData,
+        synced_at: tableData.synced_at || null,
+        created_at: tableData.created_at || new Date().toISOString(),
+    });
+};
+
+/**
+ * ORDER ITEM HELPER
+ * Ensures metadata is saved as a structured object, not a string.
+ */
+export const saveOrderItemLocal = async (itemData) => {
+    return await db.order_items.put({
+        ...itemData,
+        // Ensure metadata is always an object, fallback to 'unit'
+        metadata:
+            itemData.metadata && typeof itemData.metadata === "object"
+                ? itemData.metadata
+                : { type: "unit" },
+        synced_at: null,
+    });
+};
+
+/**
+ * Helper to safely get CSRF Token
+ */
+const getCsrfToken = () => {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.content : "";
+};
+
+/**
+ * REUSABLE HELPER: Attaches items to records
+ */
+const attachItemsToRecords = async (records) => {
+    console.log(
+        "🛠 [Sync Helper] Attaching items to",
+        records.length,
+        "records...",
+    );
+
+    try {
+        const result = await Promise.all(
+            records.map(async (record) => {
+                try {
+                    // This is the line that likely throws "Invalid key"
+                    const items = await db.order_items
+                        .where("orderable_id")
+                        .equals(record.id)
+                        .toArray();
+
+                    return {
+                        ...record,
+                        items: items || [],
+                    };
+                } catch (innerErr) {
+                    console.error(
+                        "❌ [Sync Helper] Error mapping record ID:",
+                        record.id,
+                        innerErr,
+                    );
+                    throw innerErr; // Re-throw to be caught by the outer catch
+                }
+            }),
+        );
+        console.log("✅ [Sync Helper] Items attached successfully.");
+        return result;
+    } catch (err) {
+        console.error("❌ [Sync Helper] CRITICAL FAILURE:", err);
+        throw err; // Stop execution
+    }
+};
+
+/**
+ * SYNC LOGIC: ORDERS
+ */
+export const syncOrdersToServer = async () => {
+    console.log("🔄 Starting order sync...");
+    const unsyncedOrders = await db.orders
+        .filter((order) => order.synced_at == null)
+        .toArray();
+
+    if (unsyncedOrders.length === 0) return;
+
+    const payload = await attachItemsToRecords(unsyncedOrders);
+
+    try {
+        const response = await fetch("/sales/sync-orders", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRF-TOKEN": getCsrfToken(),
+            },
+            body: JSON.stringify({ orders: payload }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.error(
+                "❌ Server rejected sync:",
+                response.status,
+                errorData,
+            );
+            throw new Error(`Server returned ${response.status}`);
+        }
+
+        const now = new Date().toISOString();
+        for (const order of unsyncedOrders) {
+            await db.orders.update(order.id, { synced_at: now });
+            await db.order_items
+                .where("orderable_id")
+                .equals(order.id)
+                .modify({ synced_at: now });
+        }
+        console.log("✅ Order sync complete.");
+    } catch (err) {
+        console.error("❌ Order sync failed:", err);
+        throw err;
+    }
+};
+
+/**
+ * SYNC LOGIC: TABLES
+ */
+export const syncTablesToServer = async () => {
+    console.log("🔄 Starting table sync...");
+    const unsyncedTables = await db.open_tables
+        .filter((table) => table.synced_at == null)
+        .toArray();
+
+    if (unsyncedTables.length === 0) return;
+
+    const payload = await attachItemsToRecords(unsyncedTables);
+
+    try {
+        const response = await fetch("/sales/sync-tables", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRF-TOKEN": getCsrfToken(),
+            },
+            body: JSON.stringify({ tables: payload }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.error(
+                "❌ Server rejected sync:",
+                response.status,
+                errorData,
+            );
+            throw new Error(`Server returned ${response.status}`);
+        }
+
+        const now = new Date().toISOString();
+        for (const table of unsyncedTables) {
+            await db.open_tables.update(table.id, { synced_at: now });
+            await db.order_items
+                .where("orderable_id")
+                .equals(table.id)
+                .modify({ synced_at: now });
+        }
+        console.log("✅ Table sync complete.");
+    } catch (err) {
+        console.error("❌ Table sync failed:", err);
+        throw err;
+    }
+};
+
+// Add these to your @/Utils/db.js
+export const updateTableItemsLocal = async (tableId, items) => {
+    // 1. Remove existing items for this specific table
+    await db.order_items.where("orderable_id").equals(tableId).delete();
+
+    // 2. Add the updated items from the cart
+    for (const item of items) {
+        await saveOrderItemLocal({
+            id: crypto.randomUUID(),
+            orderable_id: tableId,
+            product_id: item.product_id,
+            name: item.name,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            subtotal: item.subtotal,
+            metadata: item.metadata || { type: "unit" },
+            synced_at: null,
+        });
+    }
+
+    // 3. Recalculate and update the table total
+    const total = items.reduce(
+        (sum, i) => sum + (parseFloat(i.subtotal) || 0),
+        0,
+    );
+    await db.open_tables.update(tableId, { total_amount: total });
+    console.log(
+        `✅ Updated table ${tableId} with ${items.length} items and total ${total}`,
+    );
+};
+
+/**
+ * Closes the table and records the payment method used.
+ * @param {string} tableId - The ID of the table to close.
+ * @param {string} paymentMethod - The method selected (e.g., 'cash', 'card').
+ */
+export const closeTableLocal = async (tableId, paymentMethod) => {
+    await db.open_tables.update(tableId, {
+        status: "closed",
+        payment_method: paymentMethod, // Store the method
+        synced_at: null, // Reset sync to ensure the server updates the status/payment
+    });
 };

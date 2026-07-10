@@ -4,7 +4,7 @@ namespace App\Enums;
 
 enum OrderStatus: string
 {
-    case OPEN = 'open';
-    case PAID = 'paid';
-    case DEFERRED = 'deferred';
+    case Pending = 'pending';
+    case Paid = 'paid';
+    case Cancelled = 'cancelled';
 }

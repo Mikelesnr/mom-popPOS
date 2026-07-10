@@ -2,29 +2,37 @@ import React, { useEffect } from "react";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
 import { Head } from "@inertiajs/react";
 
-// Import clean, modular views from the new Dashboards subfolder
 import AdminDashboard from "./Dashboards/Admin";
 import OwnerDashboard from "./Dashboards/Owner";
 import ShopManagerDashboard from "./Dashboards/ShopManager";
-import ManagerDashboard from "./Dashboards/Manger"; // Matches your Manger.jsx filename
+import ManagerDashboard from "./Dashboards/Manger";
 import CashierDashboard from "./Dashboards/Cashier";
 
-export default function Dashboard({ auth, shopId, shops }) {
-    // PRESERVE DEVICE TERMINAL PROVISIONING:
-    // Automatically binds physical device terminal metrics context to localStorage on shift mount.
+export default function Dashboard({ auth, shopId, shops, shift }) {
     useEffect(() => {
         if (shopId) {
             localStorage.setItem("terminal_shop_id", shopId);
-            console.log(
-                "Terminal successfully provisioned for Shop ID:",
-                shopId,
-            );
+            console.log("Terminal provisioned for Shop ID:", shopId);
         }
-    }, [shopId]);
+
+        if (shift) {
+            const localShift = localStorage.getItem("terminal_shift_id");
+
+            if (!localShift) {
+                localStorage.setItem("terminal_shift_id", shift.id);
+                console.log("Shift provisioned:", shift.id);
+            } else if (localShift !== shift.id) {
+                localStorage.setItem("terminal_shift_id", shift.id);
+                console.log("Shift updated to:", shift.id);
+            }
+        } else {
+            localStorage.removeItem("terminal_shift_id");
+            console.log("No active shift found, cleared local shift.");
+        }
+    }, [shopId, shift]);
 
     const userRole = auth.user.role;
 
-    // Dynamically render the dashboard corresponding to exact operational permissions
     const renderContent = () => {
         switch (userRole) {
             case "admin":
@@ -32,24 +40,17 @@ export default function Dashboard({ auth, shopId, shops }) {
             case "system_technician":
             case "system_accountant":
                 return <AdminDashboard auth={auth} />;
-
             case "owner":
                 return <OwnerDashboard auth={auth} shops={shops || []} />;
-
             case "shop_manager":
                 return <ShopManagerDashboard auth={auth} />;
-
             case "manager":
                 return <ManagerDashboard auth={auth} />;
-
-            // Cashiers, Bartenders, and Waiters share the lightning-fast sales dashboard
             case "cashier":
             case "bartender":
             case "waiter":
                 return <CashierDashboard auth={auth} />;
-
             case "staff":
-                // General staff: purely a minimal, isolated clock-in / clock-out workspace card
                 return (
                     <div className="max-w-md mx-auto bg-white rounded-xl shadow-sm border border-gray-100 p-6 text-center">
                         <h3 className="text-lg font-bold text-gray-900 mb-1">
@@ -58,7 +59,6 @@ export default function Dashboard({ auth, shopId, shops }) {
                         <p className="text-xs text-gray-500 mb-6">
                             Logged in as: {auth.user.name}
                         </p>
-
                         <div className="space-y-3">
                             <button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 px-4 rounded-lg transition-colors shadow-sm">
                                 Clock In for Shift
@@ -69,7 +69,6 @@ export default function Dashboard({ auth, shopId, shops }) {
                         </div>
                     </div>
                 );
-
             default:
                 return (
                     <div className="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6 text-center text-gray-500">
@@ -90,7 +89,6 @@ export default function Dashboard({ auth, shopId, shops }) {
             }
         >
             <Head title="Dashboard" />
-
             <div className="py-6 max-w-7xl mx-auto sm:px-6 lg:px-8">
                 {renderContent()}
             </div>

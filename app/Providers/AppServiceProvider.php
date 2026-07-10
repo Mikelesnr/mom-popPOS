@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\URL;
 use App\Models\User;
 use App\Enums\UserRole;
+use App\Services\InventoryConverter;
+use App\Services\ShotCounter;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -16,7 +18,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Registered as a singleton for use in Sales, Metrics, and Stock
+        $this->app->singleton(InventoryConverter::class, function ($app) {
+            return new InventoryConverter();
+        });
+
+        $this->app->singleton(ShotCounter::class, function ($app) {
+            return new ShotCounter($app->make(InventoryConverter::class));
+        });
     }
 
     /**
@@ -26,7 +35,7 @@ class AppServiceProvider extends ServiceProvider
     {
         Vite::prefetch(concurrency: 3);
 
-         if (config('app.env') === 'production') {
+        if (config('app.env') === 'production') {
             URL::forceScheme('https');
         }
 
@@ -41,13 +50,15 @@ class AppServiceProvider extends ServiceProvider
 
         // System Operations Gate (For background maintenance/platform technicians)
         Gate::define('system-ops', function (User $user) {
-            if ($user->role === UserRole::SYSTEM_ADMIN) return true;
+            if ($user->role === UserRole::SYSTEM_ADMIN)
+                return true;
             return in_array($user->role, [UserRole::SYSTEM_STAFF, UserRole::SYSTEM_TECHNICIAN]);
         });
 
         // Global Platform Accounting Gate (Future-proofed global audits)
         Gate::define('system-audit', function (User $user) {
-            if ($user->role === UserRole::SYSTEM_ADMIN) return true;
+            if ($user->role === UserRole::SYSTEM_ADMIN)
+                return true;
             return $user->role === UserRole::SYSTEM_ACCOUNTANT;
         });
 
@@ -59,7 +70,8 @@ class AppServiceProvider extends ServiceProvider
         // High-Level Business Logs Gate (Owners & Store Managers ONLY)
         // Controls: Gross Margin analysis, shop settings, and direct financial metrics
         Gate::define('view-shop-business-logs', function (User $user, string $shopId) {
-            if ($user->role === UserRole::SYSTEM_ADMIN) return true;
+            if ($user->role === UserRole::SYSTEM_ADMIN)
+                return true;
 
             // Owners must own this specific storefront portfolio line
             if ($user->role === UserRole::OWNER) {
@@ -73,7 +85,8 @@ class AppServiceProvider extends ServiceProvider
         // Core Management Gate (Owners, Shop Managers, and Regular Managers)
         // Controls: Shift tracking updates, front-end cash-ups, and staff operations roster logs
         Gate::define('manage-shop-operations', function (User $user, string $shopId) {
-            if ($user->role === UserRole::SYSTEM_ADMIN) return true;
+            if ($user->role === UserRole::SYSTEM_ADMIN)
+                return true;
 
             // Validations for owners mapping across portfolios
             if ($user->role === UserRole::OWNER) {

@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Auth\LoginRequest;
 use App\Models\User;
+use App\Models\Shift;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -63,6 +63,23 @@ class AuthenticatedSessionController extends Controller
             Auth::login($authenticatedUser, true);
             $request->session()->regenerate();
 
+            // --- AUTO SHIFT CREATION ---
+            $shopId = $authenticatedUser->shop_id;
+            $currentShift = Shift::where('shop_id', $shopId)
+                ->whereNull('closed_at')
+                ->first();
+
+            if (! $currentShift) {
+                $currentShift = Shift::create([
+                    'shop_id' => $shopId,
+                    'user_id' => $authenticatedUser->id,
+                    'opened_at' => now(),
+                ]);
+            }
+
+            // Attach shift_id to session for quick access
+            session(['shift_id' => $currentShift->id]);
+
             return redirect()->intended(route('dashboard', absolute: false));
         }
 
@@ -89,7 +106,7 @@ class AuthenticatedSessionController extends Controller
         return redirect()->intended(route('dashboard', absolute: false));
     }
 
-   /**
+    /**
      * Handle an incoming API verification request (Edge Sync / Terminal Provisioning).
      * KEPT INTACT FOR REACT NATIVE APP
      */
@@ -122,11 +139,26 @@ class AuthenticatedSessionController extends Controller
                 return response()->json(['message' => 'Invalid terminal PIN assignment.'], 401);
             }
 
+            // --- AUTO SHIFT CREATION ---
+            $shopId = $authenticatedUser->shop_id;
+            $currentShift = Shift::where('shop_id', $shopId)
+                ->whereNull('closed_at')
+                ->first();
+
+            if (! $currentShift) {
+                $currentShift = Shift::create([
+                    'shop_id' => $shopId,
+                    'user_id' => $authenticatedUser->id,
+                    'opened_at' => now(),
+                ]);
+            }
+
             $token = $authenticatedUser->createToken($request->device_name)->plainTextToken;
 
             return response()->json([
                 'user' => $authenticatedUser->makeHidden(['password', 'pin', 'remember_token']),
                 'token' => $token,
+                'shift_id' => $currentShift->id,
             ]);
         }
 
