@@ -3,6 +3,7 @@ import TerminalPointOfSale from "@/Components/Sales/TerminalPointOfSale";
 import ProductForm from "@/Components/Stock/ProductForm";
 import EditProductForm from "@/Components/Stock/EditProductForm";
 import AddStockForm from "@/Components/Stock/AddStockForm";
+import WasteLogForm from "@/Components/Stock/WasteLogForm";
 
 export default function Manager({ auth }) {
     const [view, setView] = useState("pos"); // 'pos', 'stock', or 'edit'
@@ -40,6 +41,12 @@ export default function Manager({ auth }) {
                     >
                         Add Stock
                     </button>
+                    <button
+                        onClick={() => setView("waste-log")}
+                        className={`px-4 py-2 rounded ${view === "waste-log" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
+                    >
+                        Waste Log
+                    </button>
                 </div>
             </div>
 
@@ -49,6 +56,7 @@ export default function Manager({ auth }) {
                 {view === "stock" && <ProductForm />}
                 {view === "edit" && <EditProductForm />}
                 {view === "add-stock" && <AddStockForm />}
+                {view === "waste-log" && <WasteLogForm />}
             </div>
         </div>
     );

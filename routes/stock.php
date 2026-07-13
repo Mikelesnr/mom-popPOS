@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Stock\StockController;
+use App\Http\Controllers\Stock\WasteLogController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('stock')->name('stock.')->group(function () {
@@ -13,4 +14,6 @@ Route::prefix('stock')->name('stock.')->group(function () {
         ->name('delete-product');
 
     Route::put("/add-stock/{productId}", [StockController::class, 'updateStock'])->name('add-stock');
+
+    Route::post('/waste', [WasteLogController::class, 'store'])->name('waste.store');
 });
