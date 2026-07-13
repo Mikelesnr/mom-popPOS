@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\Expenses\ExpenseController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use App\Models\Shift;
@@ -48,6 +49,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // --- EXPENSE MANAGEMENT ROUTES ---
+    // This maps all standard CRUD operations (index, store, update, destroy)
+    // to the ExpenseController.
+    Route::resource('expenses', ExpenseController::class)
+        ->names('expenses');
 
     // Register Inventory Sub-Router
     require __DIR__ . '/inventory_pwa.php';
