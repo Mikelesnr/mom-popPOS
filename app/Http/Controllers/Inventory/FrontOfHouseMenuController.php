@@ -26,9 +26,13 @@ class FrontOfHouseMenuController extends Controller
 
         // 1. Fetch all categories and eager load products with their bottle specs
         $categories = Category::where('shop_id', $shopId)
-            ->with(['products' => function ($query) {
-                $query->with('bottle'); 
-            }])
+            ->with([
+                'products' => function ($query) {
+                    $query->with('bottle')
+                        ->with('unit')
+                        ->with('stock');
+                }
+            ])
             ->get();
 
         // 2. Fetch all standard shot-pour configurations for this shop
@@ -41,7 +45,6 @@ class FrontOfHouseMenuController extends Controller
             'shot_sizes' => $shotSizes->map(function ($shot) {
                 return [
                     'id' => $shot->id,
-                    'name' => $shot->name,
                     'size_ml' => $shot->size_ml,
                 ];
             }),

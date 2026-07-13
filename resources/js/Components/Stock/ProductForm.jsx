@@ -1,3 +1,5 @@
+// ProductForm.jsx
+
 import React, { useState, useEffect } from "react";
 import { useForm } from "@inertiajs/react";
 import { useLiveQuery } from "dexie-react-hooks";
