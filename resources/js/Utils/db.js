@@ -8,11 +8,13 @@ export const db = new Dexie("MomnPopPWA");
  * 1. Added 'metadata.type' index to order_items for fast report generation.
  * 2. Standardized indexes across all stores.
  */
-db.version(7).stores({
+db.version(8).stores({
     catalogs: "shop_id",
     orders: "id, shift_id, user_id, status, created_at, synced_at",
     open_tables: "id, shift_id, user_id, status, created_at, synced_at",
     order_items: "id, orderable_id, product_id, synced_at, metadata",
+    categories: "id, shop_id, name",
+    units: "id, name, type",
 });
 
 /**
@@ -240,6 +242,61 @@ export const updateTableItemsLocal = async (tableId, items) => {
     console.log(
         `✅ Updated table ${tableId} with ${items.length} items and total ${total}`,
     );
+};
+
+/**
+ * Fetch categories & units from server and save locally
+ */
+export const syncInventoryLocal = async () => {
+    try {
+        // 1. Fetch from backend
+        const response = await fetch("/inventory/sync", {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRF-TOKEN":
+                    document.querySelector('meta[name="csrf-token"]')
+                        ?.content || "",
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // 2. Save categories
+        if (data.categories && data.categories.length > 0) {
+            await db.categories.bulkPut(
+                data.categories.map((c) => ({
+                    id: c.id,
+                    shop_id: c.shop_id,
+                    name: c.name,
+                })),
+            );
+            console.log(
+                `✅ Saved ${data.categories.length} categories locally`,
+            );
+        }
+
+        // 3. Save units
+        if (data.units && data.units.length > 0) {
+            await db.units.bulkPut(
+                data.units.map((u) => ({
+                    id: u.id,
+                    name: u.name,
+                    type: u.type || null,
+                })),
+            );
+            console.log(`✅ Saved ${data.units.length} units locally`);
+        }
+
+        return { categories: data.categories, units: data.units };
+    } catch (err) {
+        console.error("❌ Inventory sync failed:", err);
+        throw err;
+    }
 };
 
 /**

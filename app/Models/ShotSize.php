@@ -17,7 +17,6 @@ class ShotSize extends Model
      */
     protected $fillable = [
         'shop_id',
-        'name',    // e.g., 'Single Pour', 'Double Pour'
         'size_ml', // e.g., 25 or 30
     ];
 

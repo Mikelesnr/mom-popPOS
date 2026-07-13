@@ -16,7 +16,6 @@ class StockVariance extends Model
      * @var array<int, string>
      */
     protected $fillable = [
-        'shop_id',
         'product_id',
         'variance', // Pure calculation result only (Negative = Shortage, Positive = Overage)
     ];
@@ -31,14 +30,6 @@ class StockVariance extends Model
         return [
             'variance' => 'decimal:3', // High-precision matching for fractional weights or item metrics
         ];
-    }
-
-    /**
-     * Multi-tenancy context relation.
-     */
-    public function shop(): BelongsTo
-    {
-        return $this->belongsTo(Shop::class, 'shop_id');
     }
 
     /**

@@ -31,8 +31,8 @@ class InventorySeeder extends Seeder
                 ['id' => $categoryData['id']],
                 [
                     'shop_id' => $shop->id,
-                    'name'    => $categoryData['name'],
-                    'slug'    => $categoryData['slug'],
+                    'name' => $categoryData['name'],
+                    'slug' => $categoryData['slug'],
                 ]
             );
         }
@@ -45,8 +45,9 @@ class InventorySeeder extends Seeder
             Unit::updateOrCreate(
                 ['id' => $unitData['id']],
                 [
-                    'name'            => $unitData['name'],
+                    'name' => $unitData['name'],
                     'conversion_rate' => $unitData['conversion_rate'],
+                    'type' => $unitData['type'],
                 ]
             );
         }
@@ -59,11 +60,11 @@ class InventorySeeder extends Seeder
             $product = Product::updateOrCreate(
                 ['id' => $productData['id']],
                 [
-                    'shop_id'       => $shop->id,
-                    'category_id'   => $productData['category_id'],
-                    'unit_id'       => $productData['unit_id'], // <-- attach unit
-                    'name'          => $productData['name'],
-                    'cost_price'    => $productData['cost_price'],
+                    'shop_id' => $shop->id,
+                    'category_id' => $productData['category_id'],
+                    'unit_id' => $productData['unit_id'], // <-- attach unit
+                    'name' => $productData['name'],
+                    'cost_price' => $productData['cost_price'],
                     'selling_price' => $productData['selling_price'],
                     'is_perishable' => $productData['is_perishable'],
                 ]
@@ -74,9 +75,9 @@ class InventorySeeder extends Seeder
                 Bottle::updateOrCreate(
                     ['product_id' => $product->id],
                     [
-                        'is_weighable'   => $productData['bottle_specs']['is_weighable'],
-                        'capacity_ml'    => $productData['bottle_specs']['capacity_ml'],
-                        'tare_weight_g'  => $productData['bottle_specs']['tare_weight_g'],
+                        'is_weighable' => $productData['bottle_specs']['is_weighable'],
+                        'capacity_ml' => $productData['bottle_specs']['capacity_ml'],
+                        'tare_weight_g' => $productData['bottle_specs']['tare_weight_g'],
                         'gross_weight_g' => $productData['bottle_specs']['gross_weight_g'],
                         'bottle_selling_price' => $productData['bottle_specs']['bottle_selling_price'] ?? null,
                     ]
@@ -86,15 +87,13 @@ class InventorySeeder extends Seeder
 
         // 5. Populate standard multi-tenant uniform pour requirements
         $shotSizes = [
-            ['name' => 'Single', 'size_ml' => 25],
-            ['name' => 'Double', 'size_ml' => 50],
+            ['size_ml' => 25],
         ];
 
         foreach ($shotSizes as $shot) {
             ShotSize::firstOrCreate(
                 [
                     'shop_id' => $shop->id,
-                    'name'    => $shot['name']
                 ],
                 [
                     'size_ml' => $shot['size_ml']

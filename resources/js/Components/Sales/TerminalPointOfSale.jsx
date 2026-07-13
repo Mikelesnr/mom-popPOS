@@ -10,6 +10,7 @@ import {
     getCatalogLocal,
     syncOrdersToServer,
     syncTablesToServer,
+    syncInventoryLocal,
 } from "@/Utils/db";
 import { Category, ShotSize, CartItem } from "@/Utils/contracts.js";
 
@@ -87,6 +88,7 @@ export default function TerminalPointOfSale() {
             await syncOrdersToServer();
             await syncTablesToServer();
             await refreshCatalogFromServer();
+            await syncInventoryLocal(); // Save inventory data locally after sync
             alert("Sync complete!");
         } catch (err) {
             console.error("Sync failed:", err);

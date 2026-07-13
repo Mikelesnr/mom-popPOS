@@ -6,7 +6,7 @@ class InventoryConverter
 {
     /**
      * Convert bottle inventory volume to total full shots.
-     * * @param float $bottleVolumeMl The total volume of the bottle in ML.
+     * @param float $bottleVolumeMl The total volume of the bottle in ML.
      * @param float $shotSizeMl The size of a single shot in ML.
      * @return int
      */
