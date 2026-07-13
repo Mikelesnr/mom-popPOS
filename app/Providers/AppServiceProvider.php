@@ -8,11 +8,14 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\URL;
 use App\Models\User;
 use App\Enums\UserRole;
+use App\Services\UnitDeductionService;
+use App\Services\LiquorDeductionService;
 use App\Services\InventoryConverter;
 use App\Services\ShotCounter;
 use App\Services\UnitProductCreator;
 use App\Services\BottleProductCreator;
 use App\Services\ProductUpdater;
+use App\Services\BottleProductUpdater;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -41,6 +44,24 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(ProductUpdater::class, function ($app) {
             return new ProductUpdater();
         });
+
+        $this->app->singleton(BottleProductUpdater::class, function ($app) {
+            return new BottleProductUpdater();
+        });
+
+        // --- REGISTER UNIT DEDUCTION SERVICE ---
+        // Instruct Laravel to always return the same instance when asked for this class.
+        $this->app->singleton(UnitDeductionService::class, function ($app) {
+            return new UnitDeductionService();
+        });
+
+        // ✅ Bind LiquorDeductionService so Laravel injects the Converter automatically
+        $this->app->singleton(LiquorDeductionService::class, function ($app) {
+            return new LiquorDeductionService(
+                $app->make(InventoryConverter::class)
+            );
+        });
+
     }
 
     /**

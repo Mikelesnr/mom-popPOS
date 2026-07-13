@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import TerminalPointOfSale from "@/Components/Sales/TerminalPointOfSale";
 import ProductForm from "@/Components/Stock/ProductForm";
 import EditProductForm from "@/Components/Stock/EditProductForm";
+import AddStockForm from "@/Components/Stock/AddStockForm";
 
 export default function Manager({ auth }) {
     const [view, setView] = useState("pos"); // 'pos', 'stock', or 'edit'
@@ -33,6 +34,12 @@ export default function Manager({ auth }) {
                     >
                         Edit Product
                     </button>
+                    <button
+                        onClick={() => setView("add-stock")}
+                        className={`px-4 py-2 rounded ${view === "add-stock" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
+                    >
+                        Add Stock
+                    </button>
                 </div>
             </div>
 
@@ -41,6 +48,7 @@ export default function Manager({ auth }) {
                 {view === "pos" && <TerminalPointOfSale />}
                 {view === "stock" && <ProductForm />}
                 {view === "edit" && <EditProductForm />}
+                {view === "add-stock" && <AddStockForm />}
             </div>
         </div>
     );

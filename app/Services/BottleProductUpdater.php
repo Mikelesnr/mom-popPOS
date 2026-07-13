@@ -5,12 +5,10 @@ namespace App\Services;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
 
-class ProductUpdater
+class BottleProductUpdater
 {
     public function update(Product $product, array $data): Product
     {
-        error_log('ProductUpdater received data for ID ' . $product->id . ': ' . print_r($data, true));
-
         return DB::transaction(function () use ($product, $data) {
             $product->update([
                 'name' => $data['name'],
@@ -21,8 +19,11 @@ class ProductUpdater
                 'is_perishable' => $data['is_perishable'] ?? false,
             ]);
 
-            // Ensure no orphaned bottle data exists for standard units
-            $product->bottle()->delete();
+            // Update or create the bottle configuration
+            $product->bottle()->updateOrCreate(
+                ['product_id' => $product->id],
+                $data['bottle']
+            );
 
             return $product;
         });

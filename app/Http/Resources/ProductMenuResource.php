@@ -13,23 +13,31 @@ class ProductMenuResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id'            => $this->id,
-            'name'          => $this->name,
-            'cost_price'    => $this->cost_price,
+            'id' => $this->id,
+            'name' => $this->name,
+            'cost_price' => $this->cost_price,
             'selling_price' => $this->selling_price,
             'is_perishable' => $this->is_perishable,
-            'unit'          => [
-                'id'              => $this->unit?->id,
-                'name'            => $this->unit?->name,
+            'unit' => [
+                'id' => $this->unit?->id,
+                'name' => $this->unit?->name,
                 'conversion_rate' => $this->unit?->conversion_rate,
             ],
-            'bottle_specs'  => $this->bottle ? [
-                'is_weighable'         => $this->bottle->is_weighable,
-                'capacity_ml'          => $this->bottle->capacity_ml,
-                'tare_weight_g'        => $this->bottle->tare_weight_g,
-                'gross_weight_g'       => $this->bottle->gross_weight_g,
+            'bottle_specs' => $this->bottle ? [
+                'is_weighable' => $this->bottle->is_weighable,
+                'capacity_ml' => $this->bottle->capacity_ml,
+                'tare_weight_g' => $this->bottle->tare_weight_g,
+                'gross_weight_g' => $this->bottle->gross_weight_g,
                 'bottle_selling_price' => $this->bottle->bottle_selling_price,
             ] : null,
+
+            'stock' => $this->whenLoaded('stock', function () {
+                if (!$this->stock)
+                    return null;
+                return [
+                    'quantity_on_hand' => $this->stock->quantity_on_hand,
+                ];
+            }),
         ];
     }
 }
