@@ -10,6 +10,9 @@ use App\Models\User;
 use App\Enums\UserRole;
 use App\Services\InventoryConverter;
 use App\Services\ShotCounter;
+use App\Services\UnitProductCreator;
+use App\Services\BottleProductCreator;
+use App\Services\ProductUpdater;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -25,6 +28,18 @@ class AppServiceProvider extends ServiceProvider
 
         $this->app->singleton(ShotCounter::class, function ($app) {
             return new ShotCounter($app->make(InventoryConverter::class));
+        });
+
+        $this->app->singleton(UnitProductCreator::class, function ($app) {
+            return new UnitProductCreator();
+        });
+
+        $this->app->singleton(BottleProductCreator::class, function ($app) {
+            return new BottleProductCreator();
+        });
+
+        $this->app->singleton(ProductUpdater::class, function ($app) {
+            return new ProductUpdater();
         });
     }
 

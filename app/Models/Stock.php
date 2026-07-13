@@ -17,10 +17,8 @@ class Stock extends Model
      */
     protected $fillable = [
         'product_id',
-        'opening_stock',
-        'stock_added',
-        'expected_stock',
-        'physical_count',
+        'quantity_on_hand',
+        'count',
     ];
 
     /**
@@ -31,10 +29,8 @@ class Stock extends Model
     protected function casts(): array
     {
         return [
-            'opening_stock' => 'decimal:3',
-            'stock_added' => 'decimal:3',
-            'expected_stock' => 'decimal:3',
-            'physical_count' => 'decimal:3',
+            'quantity_on_hand' => 'decimal:3',
+            'count' => 'decimal:3',
         ];
     }
 

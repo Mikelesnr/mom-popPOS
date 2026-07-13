@@ -60,10 +60,10 @@ class Product extends Model
     /**
      * Standard retail or kitchen specific unit conversions.
      */
-   public function unit(): BelongsTo
-{
-    return $this->belongsTo(Unit::class, 'unit_id');
-}
+    public function unit(): BelongsTo
+    {
+        return $this->belongsTo(Unit::class, 'unit_id');
+    }
 
     /**
      * Audit trail for physical inventory losses.
@@ -79,5 +79,10 @@ class Product extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class, 'category_id');
+    }
+
+    public function stock(): HasOne
+    {
+        return $this->hasOne(Stock::class, 'product_id');
     }
 }

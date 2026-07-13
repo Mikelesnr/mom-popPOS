@@ -19,8 +19,8 @@ class ShopSeeder extends Seeder
             $shop = Shop::updateOrCreate(['id' => $shopData['id']], $shopData);
 
             // Populate layout configurations relative to specific business operations
-            if ($shop->shop_type === 'hospitality') {
-                $categories = ['Beers', 'Ciders', 'Spirits', 'Soft Drinks', 'Steaks', 'Mains', 'Desserts'];
+            if ($shop->shop_type === 'restobar') {
+                $categories = ['Liquors', 'Wines', 'Whiskey', 'Brandy', 'Shots', 'Steaks', 'Mains', 'Desserts'];
             } else {
                 $categories = ['Groceries', 'Beverages', 'Bakery', 'Toiletries', 'Confectionery'];
             }
@@ -28,10 +28,10 @@ class ShopSeeder extends Seeder
             foreach ($categories as $catName) {
                 Category::firstOrCreate([
                     'shop_id' => $shop->id,
-                    'name'    => $catName,
+                    'name' => $catName,
                 ], [
                     // Explicitly pass the slug here so MySQL gets it instantly on insertion
-                    'slug'    => Str::slug($catName), 
+                    'slug' => Str::slug($catName),
                 ]);
             }
         }

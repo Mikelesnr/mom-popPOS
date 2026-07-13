@@ -5,8 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use App\Enums\UserRole;
 
-return new class extends Migration
-{
+return new class extends Migration {
     /**
      * Run the migrations.
      */
@@ -14,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('users', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('shop_id')->nullable()->constrained('shops')->nullOnDelete();
+            $table->foreignUuid('shop_id')->nullable()->constrained('shops')->cascadeOnDelete();
             $table->string('name');
             $table->string('email')->nullable()->unique();
             $table->string('password')->nullable(); // Nullable because staff use PINs!
