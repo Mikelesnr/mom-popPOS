@@ -16,4 +16,11 @@ Route::prefix('stock')->name('stock.')->group(function () {
     Route::put("/add-stock/{productId}", [StockController::class, 'updateStock'])->name('add-stock');
 
     Route::post('/waste', [WasteLogController::class, 'store'])->name('waste.store');
+
+    // 2. Add the new route for bulk reconciliation.
+    // URL: /stock/count/reconcile
+    // Name: stock.count.reconcile
+    // Note: We use 'count' as a sub-prefix to keep the stock routes organized.
+    Route::post('/count/reconcile', [StockController::class, 'reconcile'])
+        ->name('count.reconcile');
 });

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Stock;
 
 use App\Http\Controllers\Controller;
 use App\Models\Stock;
+use App\Models\StockVariance;
 use Illuminate\Http\Request;
 use App\Services\UnitProductCreator;
 use App\Services\BottleProductCreator;
@@ -13,6 +14,8 @@ use App\Services\InventoryConverter;
 use App\Models\Product;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 
 class StockController extends Controller
 {
@@ -214,6 +217,98 @@ class StockController extends Controller
 
         // 6. Redirect back
         return redirect()->back()->with('success', 'Stock updated successfully.');
+    }
+
+    /**
+     * Handle the bulk reconciliation of a physical stock count.
+     *
+     * Corrected logic:
+     * 1. Update stocks.count with frontend value.
+     * 2. Compare count vs quantity_on_hand.
+     * 3. If different:
+     *    a. Push variance to stock_variances.
+     *    b. Replace quantity_on_hand with count.
+     * 4. If identical: Do nothing (skip saves).
+     *
+     * @param  Request  $request
+     * @return JsonResponse
+     */
+    public function reconcile(Request $request)
+    {
+        // 1. Strict Validation
+        $validated = $request->validate([
+            'counts' => 'required|array',
+            'counts.*.product_id' => 'required|exists:products,id',
+            // Matches decimal:3 cast on Stock model
+            'counts.*.quantity_total_base_units' => 'required|numeric|min:0',
+        ]);
+
+        Log::info("Starting stock reconciliation (optimized).");
+
+        // 2. Atomic Transaction
+        return DB::transaction(function () use ($validated) {
+
+            $processedItemsCount = 0;
+            $updatedItemsCount = 0;
+
+            foreach ($validated['counts'] as $entry) {
+                $productId = $entry['product_id'];
+                // The physical count sent from frontend
+                $countedValue = $entry['quantity_total_base_units'];
+
+                // 3. Pessimistic Lock on Stock row
+                // We lock even if we don't save, to ensure no sales happen during the read
+                $stock = Stock::where('product_id', $productId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$stock)
+                    continue;
+
+                $systemQuantity = $stock->quantity_on_hand;
+
+                // --- OPTIMIZED STRICT LOGIC ---
+
+                // Step 1: ALWAYS update the 'count' column with the frontend figure
+                // This records what the manager physically entered in the UI.
+                $stock->count = $countedValue;
+                $stock->save();
+
+                // Step 2 & 3: Compare and Reconcile ONLY IF different
+                // Variance = Count (Physical) - Quantity on Hand (System)
+                $variance = $countedValue - $systemQuantity;
+
+                // --- FIX: Logic nested inside the IF block ---
+                if (abs($variance) > 0.0001) {
+                    Log::debug("Variance P:$productId. Sys:$systemQuantity | Count:$countedValue | Var:$variance");
+
+                    // A. Push variance record
+                    StockVariance::create([
+                        'product_id' => $productId,
+                        'variance' => $variance,
+                    ]);
+
+                    // B. Perform Reconciliation: Replace quantity_on_hand with the count
+                    $stock->quantity_on_hand = $countedValue;
+                    $stock->save();
+
+                    $updatedItemsCount++;
+                } else {
+                    Log::debug("No variance for P:$productId. Skipping reconciliation update.");
+                }
+                // ---------------------------------------------
+
+                $processedItemsCount++;
+            }
+
+            Log::info("Reconciliation complete. Processed $processedItemsCount items; updated $updatedItemsCount mismatched items.");
+
+            return response()->json([
+                'message' => 'Stock count reconciled successfully.',
+                'processed_items' => $processedItemsCount,
+                'updated_variances' => $updatedItemsCount,
+            ]);
+        });
     }
 
     /**

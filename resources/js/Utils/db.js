@@ -15,6 +15,8 @@ db.version(8).stores({
     order_items: "id, orderable_id, product_id, synced_at, metadata",
     categories: "id, shop_id, name",
     units: "id, name, type",
+    stock_counts: "product_id, quantity_total_base_units, created_at",
+    temp_stock_adds: "id, product_id, added_quantity, shop_id, added_at",
 });
 
 /**
@@ -310,4 +312,83 @@ export const closeTableLocal = async (tableId, paymentMethod) => {
         payment_method: paymentMethod, // Store the method
         synced_at: null, // Reset sync to ensure the server updates the status/payment
     });
+};
+
+/**
+ * STOCK COUNT HELPERS
+ */
+
+/**
+ * Saves or updates a count in the local ledger.
+ * Since product_id is the PK, this is idempotent.
+ */
+export const saveStockCountLocal = async (productId, totalBaseUnits) => {
+    return await db.stock_counts.put({
+        product_id: productId,
+        quantity_total_base_units: totalBaseUnits,
+        created_at: new Date().toISOString(),
+    });
+};
+
+/**
+ * Removes a specific count from the local ledger.
+ */
+export const deleteStockCountLocal = async (productId) => {
+    return await db.stock_counts.delete(productId);
+};
+
+/**
+ * Retrieves all pending stock counts.
+ */
+export const getAllStockCountsLocal = async () => {
+    return await db.stock_counts.toArray();
+};
+
+export const syncStockCountsToServer = async () => {
+    const counts = await getAllStockCountsLocal();
+    if (counts.length === 0) {
+        console.log("ℹ️ No pending stock counts to sync.");
+        return;
+    }
+
+    console.log(`🔄 Syncing ${counts.length} stock counts...`);
+
+    try {
+        const response = await fetch(route("stock.count.reconcile"), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRF-TOKEN": getCsrfToken(),
+            },
+            // Payload structure matches backend validation
+            body: JSON.stringify({ counts: counts }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.error(
+                "❌ Server rejected count sync:",
+                response.status,
+                errorData,
+            );
+            throw new Error(`Server returned ${response.status}`);
+        }
+
+        // IMPORTANT: The controller returns JSON confirming items processed.
+        // Based on your approval, the controller returns { message: '...', processed_items: N }
+        const result = await response.json();
+
+        // Verify safety: Only wipe if the server acknowledges receipt.
+        // Because the backend logic is idempotent (it matches existing values),
+        // it is safe to wipe the local table after the POST returns 200.
+        await db.stock_counts.clear();
+        console.log(
+            `✅ Stock count sync complete. Wiped local ledger. Server processed: ${result.processed_items}`,
+        );
+
+        return result;
+    } catch (err) {
+        console.error("❌ Stock count sync failed:", err);
+        throw err; // Propagate error to UI
+    }
 };
