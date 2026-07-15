@@ -19,12 +19,22 @@ use Illuminate\Support\Facades\DB;
 
 class StockController extends Controller
 {
+
+    protected $unitUpdater;
+    protected $bottleUpdater;
+    protected $converter;
+
     /**
      * Inject the converter service via the controller constructor.
      */
     public function __construct(
-        protected InventoryConverter $converter
+        ProductUpdater $unitUpdater,
+        BottleProductUpdater $bottleUpdater,
+        InventoryConverter $converter
     ) {
+        $this->unitUpdater = $unitUpdater;
+        $this->bottleUpdater = $bottleUpdater;
+        $this->converter = $converter;
     }
 
     /**
@@ -135,89 +145,90 @@ class StockController extends Controller
      * @param Request $request The request containing 'added_quantity' (packs/bottles)
      * @param string $productId
      */
-    public function updateStock(Request $request, string $productId)
-    {
-        // 1. Validate input. User enters number of packs or bottles (can be decimal, e.g., 0.5 case).
-        $validated = $request->validate([
-            'added_quantity' => 'required|numeric|min:0.01',
-        ]);
+    // public function updateStock(Request $request, string $productId)
+    // {
+    //     // 1. Validate input. User enters number of packs or bottles (can be decimal, e.g., 0.5 case).
+    //     $validated = $request->validate([
+    //         'added_quantity' => 'required|numeric|min:0.01',
+    //     ]);
 
-        // 2. Fetch product, its unit, shop shot size, AND the related bottle record.
-        // We use eager loading to optimize queries.
-        $product = Product::with(['unit', 'shop.shotSize', 'bottle'])
-            ->findOrFail($productId);
+    //     // 2. Fetch product, its unit, shop shot size, AND the related bottle record.
+    //     // We use eager loading to optimize queries.
+    //     $product = Product::with(['unit', 'shop.shotSize', 'bottle'])
+    //         ->findOrFail($productId);
 
-        $unit = $product->unit;
+    //     $unit = $product->unit;
 
-        if (!$unit) {
-            Log::error("Stock Entry Failed: Product ID {$productId} has no unit attached.");
-            return redirect()->back()->with('error', 'Product configuration error.');
-        }
+    //     if (!$unit) {
+    //         Log::error("Stock Entry Failed: Product ID {$productId} has no unit attached.");
+    //         return redirect()->back()->with('error', 'Product configuration error.');
+    //     }
 
-        // --- UPDATED VERIFICATION LOGIC ---
-        // Check if the 'bottle' relationship exists (i.e., this product has a related record in the bottles table).
-        $isBottle = !is_null($product->bottle);
+    //     // --- UPDATED VERIFICATION LOGIC ---
+    //     // Check if the 'bottle' relationship exists (i.e., this product has a related record in the bottles table).
+    //     $isBottle = !is_null($product->bottle);
 
-        // 3. Perform Conversion Logic
-        $totalBaseUnitsToAdd = 0;
-        $quantityEntered = (float) $validated['added_quantity'];
+    //     // 3. Perform Conversion Logic
+    //     $totalBaseUnitsToAdd = 0;
+    //     $quantityEntered = (float) $validated['added_quantity'];
 
-        if ($isBottle) {
-            // --- PATH B: LIQUOR BOTTLES (Verified by relationship existence) ---
+    //     if ($isBottle) {
+    //         // --- PATH B: LIQUOR BOTTLES (Verified by relationship existence) ---
 
-            // The capacity_ml is stored in the related Bottle model
-            $bottleVolumeMl = (float) $product->bottle->capacity_ml;
+    //         // The capacity_ml is stored in the related Bottle model
+    //         $bottleVolumeMl = (float) $product->bottle->capacity_ml;
 
-            // Get shop's specific shot size (e.g., 30ml)
-            // Fallback to 30ml if not configured
-            $shotSizeMl = (float) ($product->shop->shotSize->size_ml ?? 30.0);
+    //         // Get shop's specific shot size (e.g., 30ml)
+    //         // Fallback to 30ml if not configured
+    //         $shotSizeMl = (float) ($product->shop->shotSize->size_ml ?? 30.0);
 
-            if ($bottleVolumeMl <= 0 || $shotSizeMl <= 0) {
-                Log::error("Stock Entry Failed: Invalid bottle configuration for Product ID {$productId}. Vol: {$bottleVolumeMl}, Shot: {$shotSizeMl}");
-                return redirect()->back()->with('error', 'Invalid bottle configuration. Check volume and shot size.');
-            }
+    //         if ($bottleVolumeMl <= 0 || $shotSizeMl <= 0) {
+    //             Log::error("Stock Entry Failed: Invalid bottle configuration for Product ID {$productId}. Vol: {$bottleVolumeMl}, Shot: {$shotSizeMl}");
+    //             return redirect()->back()->with('error', 'Invalid bottle configuration. Check volume and shot size.');
+    //         }
 
-            // Calculate shots per bottle (e.g., 700 / 30 = 23.33 -> floors to 23)
-            $shotsPerBottle = $this->converter->convertToShots($bottleVolumeMl, $shotSizeMl);
+    //         // Calculate shots per bottle (e.g., 700 / 30 = 23.33 -> floors to 23)
+    //         $shotsPerBottle = $this->converter->convertToShots($bottleVolumeMl, $shotSizeMl);
 
-            // Multiply by bottles entered (e.g., 10 bottles * 23 = 230)
-            // We round to ensure an integer result for the database
-            $totalBaseUnitsToAdd = (int) round($quantityEntered * $shotsPerBottle);
+    //         // Multiply by bottles entered (e.g., 10 bottles * 23 = 230)
+    //         // We round to ensure an integer result for the database
+    //         $totalBaseUnitsToAdd = (int) round($quantityEntered * $shotsPerBottle);
 
-            Log::info("Stock Entry (Bottle Relationship Verified): Added {$quantityEntered} bottles. Vol: {$bottleVolumeMl}ml, Shot: {$shotSizeMl}ml. Calculated {$totalBaseUnitsToAdd} shots.");
+    //         Log::info("Stock Entry (Bottle Relationship Verified): Added {$quantityEntered} bottles. Vol: {$bottleVolumeMl}ml, Shot: {$shotSizeMl}ml. Calculated {$totalBaseUnitsToAdd} shots.");
 
-        } else {
-            // --- PATH A: STANDARD UNITS (Packs) ---
-            // Simple multiplication
+    //     } else {
+    //         // --- PATH A: STANDARD UNITS (Packs) ---
+    //         // Simple multiplication
 
-            // Conversion rate is items per pack (e.g., 6)
-            $itemsPerPack = (float) $unit->conversion_rate;
+    //         // Conversion rate is items per pack (e.g., 6)
+    //         $itemsPerPack = (float) $unit->conversion_rate;
 
-            if ($itemsPerPack <= 0) {
-                Log::error("Stock Entry Failed: Invalid unit conversion rate for Product ID {$productId}. Rate: {$itemsPerPack}");
-                return redirect()->back()->with('error', 'Invalid unit configuration. Check conversion rate.');
-            }
+    //         if ($itemsPerPack <= 0) {
+    //             Log::error("Stock Entry Failed: Invalid unit conversion rate for Product ID {$productId}. Rate: {$itemsPerPack}");
+    //             return redirect()->back()->with('error', 'Invalid unit configuration. Check conversion rate.');
+    //         }
 
-            // Multiply packs by rate (e.g., 10 packs * 6 = 60)
-            // Round to ensure integer
-            $totalBaseUnitsToAdd = (int) round($quantityEntered * $itemsPerPack);
+    //         // Multiply packs by rate (e.g., 10 packs * 6 = 60)
+    //         // Round to ensure integer
+    //         $totalBaseUnitsToAdd = (int) round($quantityEntered * $itemsPerPack);
 
-            Log::info("Stock Entry (Unit): Added {$quantityEntered} packs. Rate: {$itemsPerPack}. Calculated {$totalBaseUnitsToAdd} units.");
-        }
+    //         Log::info("Stock Entry (Unit): Added {$quantityEntered} packs. Rate: {$itemsPerPack}. Calculated {$totalBaseUnitsToAdd} units.");
+    //     }
 
 
-        // 4. Retrieve/Create Stock Record
-        $stock = Stock::firstOrCreate(
-            ['product_id' => $productId],
-            ['quantity_on_hand' => 0] // Initialize at 0
-        );
+    //     // 4. Retrieve/Create Stock Record
+    //     $stock = Stock::firstOrCreate(
+    //         ['product_id' => $productId],
+    //         ['quantity_on_hand' => 0] // Initialize at 0
+    //     );
 
-        // 5. Perform the atomic increment
-        $stock->increment('quantity_on_hand', $totalBaseUnitsToAdd);
+    //     // 5. Perform the atomic increment
+    //     $stock->increment('quantity_on_hand', $totalBaseUnitsToAdd);
 
-        // 6. Redirect back
-        return redirect()->back()->with('success', 'Stock updated successfully.');
-    }
+    //     // 6. Redirect back
+    //     return redirect()->back()->with('success', 'Stock updated successfully.');
+    // }
+
 
     /**
      * Handle the bulk reconciliation of a physical stock count.
@@ -311,6 +322,8 @@ class StockController extends Controller
         });
     }
 
+
+
     /**
      * Discontinue a product by deleting its stock tracking.
      */
@@ -321,4 +334,173 @@ class StockController extends Controller
 
         return back()->with('success', 'Product discontinued from inventory.');
     }
+
+
+    /**
+     * Handle bulk stock additions.
+     *
+     * Expected Request Payload Structure:
+     * {
+     *   "updates": [
+     *     {
+     *       "product_id": "uuid-or-id-1",
+     *       "added_quantity": 5.5
+     *     },
+     *     {
+     *       "product_id": "uuid-or-id-2",
+     *       "added_quantity": 2
+     *     }
+     *   ]
+     * }
+     *
+     * @param  Request  $request
+     * @return JsonResponse
+     */
+    public function bulkUpdateStock(Request $request)
+    {
+        // 1. Validate the incoming bulk request structure.
+        $validated = $request->validate([
+            'updates' => 'required|array',
+            'updates.*.product_id' => 'required|exists:products,id',
+            'updates.*.added_quantity' => 'required|numeric|min:0.01',
+        ]);
+
+        // Get authenticated user context for security/logging
+        $currentShopId = $request->user()->shop_id;
+        $userId = $request->user()->id;
+
+        $processedCount = 0;
+        $errors = [];
+
+        // 2. Use a single database transaction for the entire bulk operation.
+        DB::beginTransaction();
+
+        try {
+            foreach ($validated['updates'] as $index => $updateItem) {
+                $productId = $updateItem['product_id'];
+                $quantityEntered = (float) $updateItem['added_quantity'];
+
+                // --- START EXACT LOGIC FROM ORIGINAL METHOD ---
+                // 2. Fetch product with required relationships, scoped to shop for security.
+                $product = Product::with(['unit', 'shop.shotSize', 'bottle'])
+                    ->where('id', $productId)
+                    ->where('shop_id', $currentShopId)
+                    ->first();
+
+                if (!$product) {
+                    Log::warning("Bulk Stock Sync Failed: Product ID {$productId} not found or unauthorized for Shop {$currentShopId}. Skipped.");
+                    $errors[] = "Item index {$index}: Product configuration error or unauthorized.";
+                    continue;
+                }
+
+                $unit = $product->unit;
+                if (!$unit) {
+                    Log::error("Stock Entry Failed: Product ID {$productId} has no unit attached.");
+                    $errors[] = "Item '{$product->name}': Product has no unit attached.";
+                    continue;
+                }
+
+                // Verify if it's a bottle based on relationship existence
+                $isBottle = !is_null($product->bottle);
+
+                // 3. Perform Conversion Logic
+                $totalBaseUnitsToAdd = 0;
+
+                if ($isBottle) {
+                    // --- PATH B: LIQUOR BOTTLES ---
+                    $bottleVolumeMl = (float) $product->bottle->capacity_ml;
+                    $shotSizeMl = (float) ($product->shop->shotSize->size_ml ?? 30.0);
+
+                    if ($bottleVolumeMl <= 0 || $shotSizeMl <= 0) {
+                        Log::error("Stock Entry Failed: Invalid bottle configuration for Product {$productId}.");
+                        $errors[] = "Item '{$product->name}': Invalid bottle configuration.";
+                        continue;
+                    }
+
+                    $shotsPerBottle = $this->converter->convertToShots($bottleVolumeMl, $shotSizeMl);
+                    $totalBaseUnitsToAdd = (int) round($quantityEntered * $shotsPerBottle);
+
+                    Log::info("Bulk Sync: Added {$quantityEntered} bottles of '{$product->name}'. Calculated {$totalBaseUnitsToAdd} shots.");
+
+                } else {
+                    // --- PATH A: STANDARD UNITS (Packs) ---
+                    $itemsPerPack = (float) $unit->conversion_rate;
+
+                    if ($itemsPerPack <= 0) {
+                        Log::error("Stock Entry Failed: Invalid conversion rate for Product {$productId}.");
+                        $errors[] = "Item '{$product->name}': Invalid unit conversion rate.";
+                        continue;
+                    }
+
+                    $totalBaseUnitsToAdd = (int) round($quantityEntered * $itemsPerPack);
+
+                    Log::info("Bulk Sync: Added {$quantityEntered} packs of '{$product->name}'. Calculated {$totalBaseUnitsToAdd} units.");
+                }
+
+                // 4. Retrieve/Create Stock Record
+                $stock = Stock::firstOrCreate(
+                    ['product_id' => $productId],
+                    ['quantity_on_hand' => 0]
+                );
+
+                // 5. Perform the atomic increment
+                $stock->increment('quantity_on_hand', $totalBaseUnitsToAdd);
+
+                // --- END EXACT LOGIC FROM ORIGINAL METHOD ---
+
+                // 6. Determine which existing singleton service to call to update 'last updated' fields,
+                // using data arrays derived from the product model.
+
+                // Prepare common update data array required by services
+                $updateData = [
+                    'name' => $product->name,
+                    'category_id' => $product->category_id,
+                    'unit_id' => $product->unit_id,
+                    'cost_price' => $product->cost_price,
+                    'selling_price' => $product->selling_price,
+                    'is_perishable' => $product->is_perishable,
+                ];
+
+                if ($isBottle) {
+                    // Add bottle-specific data required by BottleProductUpdater
+                    $updateData['bottle'] = [
+                        'capacity_ml' => $product->bottle->capacity_ml,
+                        'is_sealed' => $product->bottle->is_sealed,
+                        // Add other fill level fields if required by your specific Bottle model
+                    ];
+
+                    // Call existing singleton service
+                    $this->bottleUpdater->update($product, $updateData);
+                    Log::debug("Called BottleProductUpdater for product ID {$product->id}");
+                } else {
+                    // Call existing singleton service
+                    $this->unitUpdater->update($product, $updateData);
+                    Log::debug("Called ProductUpdater for product ID {$product->id}");
+                }
+
+                $processedCount++;
+            }
+
+            // 7. Commit Transaction
+            DB::commit();
+
+            Log::info("Bulk Stock Sync Successful: Updated {$processedCount} items for Shop {$currentShopId}. User {$userId}.");
+
+            return response()->json([
+                'message' => 'Stock updated successfully.',
+                'synced_count' => $processedCount,
+                'errors' => $errors,
+            ], 200);
+
+        } catch (\Exception $e) {
+            // 8. Rollback on failure
+            DB::rollBack();
+            Log::error("Critical Error during Bulk Stock Sync for Shop {$currentShopId}: " . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Failed to sync stock due to server error.',
+            ], 500);
+        }
+    }
+
 }
