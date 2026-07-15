@@ -4,6 +4,7 @@ import ProductForm from "@/Components/Stock/ProductForm";
 import EditProductForm from "@/Components/Stock/EditProductForm";
 import AddStockForm from "@/Components/Stock/AddStockForm";
 import WasteLogForm from "@/Components/Stock/WasteLogForm";
+import StockCountWorksheet from "@/Components/Stock/StockCountWorksheet";
 
 export default function Manager({ auth }) {
     const [view, setView] = useState("pos"); // 'pos', 'stock', or 'edit'
@@ -47,6 +48,12 @@ export default function Manager({ auth }) {
                     >
                         Waste Log
                     </button>
+                    <button
+                        onClick={() => setView("stock-count")}
+                        className={`px-4 py-2 rounded ${view === "stock-count" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
+                    >
+                        Stock Count
+                    </button>
                 </div>
             </div>
 
@@ -57,6 +64,7 @@ export default function Manager({ auth }) {
                 {view === "edit" && <EditProductForm />}
                 {view === "add-stock" && <AddStockForm />}
                 {view === "waste-log" && <WasteLogForm />}
+                {view === "stock-count" && <StockCountWorksheet />}
             </div>
         </div>
     );
