@@ -1,32 +1,53 @@
 <?php
-
 namespace App\Http\Controllers\Cashup;
 
 use App\Http\Controllers\Controller;
 use App\Models\Shift;
-use App\Models\Table;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class CashupController extends Controller
 {
     // Fetch summary for the Z-Slip
     public function show(Request $request, $shiftId)
     {
-        $shift = Shift::where('id', $shiftId)
-            ->where('shop_id', $request->header('X-Shop-ID')) // Scoped to shop
+        // 1. Fetch shift with shop relationship for receipt branding
+        $shift = Shift::with('shop')
+            ->where('id', $shiftId)
+            ->whereIn('shop_id', $request->user()->getAccessibleShopIds())
             ->firstOrFail();
 
-        $orders = $shift->orders()->get();
-        $tables = $shift->tables()->with('orderItems')->get();
+        // 2. Load orders with user and items; tables with user and items
+        $orders = $shift->orders()->with(['user', 'items'])->get();
+        $tables = $shift->tables()->with(['user', 'items'])->get();
+
+        // 3. Grouping logic
+        $byPaymentMethod = $orders->groupBy('payment_method')->map->sum('total_amount');
+
+        $byStaff = $orders->groupBy('user_id')->map(function ($userOrders) {
+            return [
+                'staff_name' => $userOrders->first()->user->name, // Get name from first order
+                'methods' => $userOrders->groupBy('payment_method')->map->sum('total_amount'),
+                'orders' => $userOrders // Include orders for detailed receipts
+            ];
+        });
 
         return response()->json([
+            'shop_name' => $shift->shop->name,
             'shift' => $shift,
             'summary' => [
-                'paid_orders_total' => $orders->sum('total_amount'),
-                'closed_tables_total' => $tables->where('status', 'closed')->sum('total_amount'),
-                'deferred_tables_total' => $tables->where('status', 'deferred')->sum('total_amount'),
-                'deferred_tables' => $tables->where('status', 'deferred'),
+                'totals_by_method' => $byPaymentMethod,
+                'totals_by_staff' => $byStaff,
+                'deferred_tables' => $tables->where('status', 'deferred')->map(function ($table) {
+                    return [
+                        'id' => $table->id,
+                        'name' => $table->name,
+                        'staff_name' => $table->user->name,
+                        'total_amount' => $table->total_amount,
+                        'items' => $table->items
+                    ];
+                })
             ]
         ]);
     }
@@ -41,8 +62,11 @@ class CashupController extends Controller
             'blind_onemoney_reported' => 'required|numeric',
         ]);
 
-        return DB::transaction(function () use ($shiftId, $validated) {
-            $shift = Shift::findOrFail($shiftId);
+        return DB::transaction(function () use ($request, $shiftId, $validated) {
+            // Scoped to the user's accessible shop IDs
+            $shift = Shift::where('id', $shiftId)
+                ->whereIn('shop_id', $request->user()->getAccessibleShopIds())
+                ->firstOrFail();
 
             $shift->update([
                 'closed_at' => now(),
@@ -54,5 +78,16 @@ class CashupController extends Controller
 
             return response()->json(['message' => 'Shift closed successfully', 'shift' => $shift]);
         });
+    }
+
+    // Fetch historical cashups
+    public function index(Request $request)
+    {
+        $history = Shift::whereIn('shop_id', $request->user()->getAccessibleShopIds())
+            ->whereNotNull('closed_at')
+            ->latest()
+            ->get();
+
+        return response()->json($history);
     }
 }
