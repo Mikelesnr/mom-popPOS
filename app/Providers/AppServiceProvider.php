@@ -118,24 +118,26 @@ class AppServiceProvider extends ServiceProvider
             return $user->role === UserRole::SHOP_MANAGER && $user->shop_id === $shopId;
         });
 
+
         // Core Management Gate (Owners, Shop Managers, and Regular Managers)
         // Controls: Shift tracking updates, front-end cash-ups, and staff operations roster logs
-        Gate::define('manage-shop-operations', function (User $user, string $shopId) {
-            if ($user->role === UserRole::SYSTEM_ADMIN)
+        Gate::define('manage-shop-operations', function (User $user) {
+            if ($user->role === UserRole::SYSTEM_ADMIN) {
                 return true;
-
-            // Validations for owners mapping across portfolios
-            if ($user->role === UserRole::OWNER) {
-                return $user->ownedShops()->where('shops.id', $shopId)->exists();
             }
 
-            // Broad check for store management levels assigned to this specific house context
+            if ($user->role === UserRole::OWNER) {
+                // Just verify they actually own at least one shop
+                return $user->ownedShops()->exists();
+            }
+
             $allowedManagers = [
                 UserRole::SHOP_MANAGER,
                 UserRole::MANAGER
             ];
 
-            return in_array($user->role, $allowedManagers) && $user->shop_id === $shopId;
+            // Verify they are a manager and are assigned to a shop
+            return in_array($user->role, $allowedManagers) && !is_null($user->shop_id);
         });
 
         // Frontline POS Execution Gate (Register staff session handling)

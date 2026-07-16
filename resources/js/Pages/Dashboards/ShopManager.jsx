@@ -5,6 +5,7 @@ import EditProductForm from "@/Components/Stock/EditProductForm";
 import AddStockWorksheet from "@/Components/Stock/AddStockWorksheet";
 import WasteLogForm from "@/Components/Stock/WasteLogForm";
 import StockCountWorksheet from "@/Components/Stock/StockCountWorksheet";
+import Cashup from "@/Components/Cashup/Cashup";
 
 export default function ShopManager({ auth }) {
     const [view, setView] = useState("pos"); // 'pos', 'stock', or 'edit'
@@ -54,6 +55,12 @@ export default function ShopManager({ auth }) {
                     >
                         Stock Count
                     </button>
+                    <button
+                        onClick={() => setView("cashup")}
+                        className={`px-4 py-2 rounded ${view === "cashup" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
+                    >
+                        Cashup
+                    </button>
                 </div>
             </div>
 
@@ -65,6 +72,7 @@ export default function ShopManager({ auth }) {
                 {view === "add-stock" && <AddStockWorksheet />}
                 {view === "waste-log" && <WasteLogForm />}
                 {view === "stock-count" && <StockCountWorksheet />}
+                {view === "cashup" && <Cashup />}
             </div>
         </div>
     );

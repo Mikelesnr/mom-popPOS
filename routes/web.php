@@ -62,8 +62,11 @@ Route::middleware('auth')->group(function () {
     // Register Sales Sub-Router
     require __DIR__ . '/sales_pwa.php';
 
-    // Import the stock subrouter
+    // Register stock subrouter
     require __DIR__ . '/stock.php';
+
+    // Register Cashup Sub-Router
+    require __DIR__ . '/cashup.php';
 });
 
 require __DIR__ . '/auth.php';

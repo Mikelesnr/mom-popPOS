@@ -8,7 +8,7 @@ export default function PaymentSelectionModal({
     onSelect,
     onCancel,
 }) {
-    const methods = ["cash", "card", "ecocash", "onemoney", "inbucks"];
+    const methods = ["cash", "card", "ecocash", "onemoney", "inbucks", "omari"];
     const [selectedMethod, setSelectedMethod] = useState("cash");
 
     // Cash entry state

@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Hash;
+use App\Models\Shop;
 
 class User extends Authenticatable
 {
@@ -50,6 +51,24 @@ class User extends Authenticatable
     {
         return $this->belongsToMany(Shop::class, 'shop_owners', 'user_id', 'shop_id')
             ->withTimestamps();
+    }
+
+    // App\Models\User.php
+
+    public function getAccessibleShopIds(): array
+    {
+        // 1. System Admin: Returns all shop IDs (or empty array if you want to handle logic differently)
+        if ($this->role === UserRole::SYSTEM_ADMIN) {
+            return Shop::pluck('id')->toArray();
+        }
+
+        // 2. Owner: Uses your existing shopsOwned relationship
+        if ($this->role === UserRole::OWNER) {
+            return $this->shopsOwned()->pluck('shops.id')->toArray();
+        }
+
+        // 3. Managers: Returns their single assigned shop ID as an array
+        return [$this->shop_id];
     }
 
     /**
