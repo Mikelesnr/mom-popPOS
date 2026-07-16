@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import TerminalPointOfSale from "@/Components/Sales/TerminalPointOfSale";
 import ProductForm from "@/Components/Stock/ProductForm";
 import EditProductForm from "@/Components/Stock/EditProductForm";
-import AddStockForm from "@/Components/Stock/AddStockForm";
+import AddStockWorksheet from "@/Components/Stock/AddStockWorksheet";
 import WasteLogForm from "@/Components/Stock/WasteLogForm";
 import StockCountWorksheet from "@/Components/Stock/StockCountWorksheet";
 
@@ -62,7 +62,7 @@ export default function ShopManager({ auth }) {
                 {view === "pos" && <TerminalPointOfSale />}
                 {view === "stock" && <ProductForm />}
                 {view === "edit" && <EditProductForm />}
-                {view === "add-stock" && <AddStockForm />}
+                {view === "add-stock" && <AddStockWorksheet />}
                 {view === "waste-log" && <WasteLogForm />}
                 {view === "stock-count" && <StockCountWorksheet />}
             </div>

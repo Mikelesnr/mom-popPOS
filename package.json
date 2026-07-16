@@ -26,6 +26,7 @@
         "dexie": "^4.4.4",
         "dexie-react-hooks": "^4.4.0",
         "lucide-react": "^1.23.0",
-        "react-hot-toast": "^2.6.0"
+        "react-hot-toast": "^2.6.0",
+        "react-select": "^5.10.2"
     }
 }

@@ -39,18 +39,12 @@ export default function EditableCountInput({
 
         if (isBottle) {
             // --- A: SPIRIT MODE ---
-            // We still need conversion here to get Total ML from Shots.
             calculatedTotalBaseUnits = ShotCounter.convertShotsToMl(
                 finalValue,
                 shopShotSizeMl,
             );
         } else {
-            // --- B: SIMPLE UNIT MODE (FIXED) ---
-            // OLD CODE DELETED: const unitsPerPack = parseFloat(item.catalog_data?.unit?.conversion_rate) || 0;
-            // OLD CODE DELETED: calculatedTotalBaseUnits = parseFloat(finalValue) * unitsPerPack;
-
-            // NEW FIXED CODE: Treat input as raw base units.
-            // If user enters "12", we save "12".
+            // --- B: SIMPLE UNIT MODE ---
             calculatedTotalBaseUnits = parseFloat(finalValue) || 0;
         }
 
@@ -70,7 +64,6 @@ export default function EditableCountInput({
     // Handle Save (Direct Input)
     const handleSaveDirect = () => {
         if (isBottle) {
-            // Visual estimates allowed (e.g., 15.5 shots)
             const finalShots = parseFloat(localShots) || 0;
             if (finalShots < 0) {
                 toast.error("Shots cannot be negative");
@@ -78,59 +71,38 @@ export default function EditableCountInput({
             }
             performSave(finalShots, { shots: finalShots, each_count: null });
         } else {
-            // --- UNIT MODE (FIXED) ---
             const count = parseFloat(localEachCount) || 0;
             if (count < 0) {
                 toast.error("Count cannot be negative");
                 return;
             }
-
-            // Save the exact number entered by the user (e.g., 12 bottles)
             performSave(count, { each_count: count, shots: null });
         }
     };
 
-    const handleUnlock = (e) => {
+    // --- MODIFIED: STREAMLINED UNLOCK (No confirmation) ---
+    const handleUnlock = async (e) => {
         e.stopPropagation();
         if (!isLocked) return;
 
-        const toastId = toast(
-            (t) => (
-                <div className="flex flex-col gap-3">
-                    <p className="font-medium text-gray-900">
-                        Unlock <span className="font-bold">{item.name}</span>?
-                    </p>
-                    <div className="flex justify-end gap-2 mt-1">
-                        <button
-                            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-md text-sm font-medium"
-                            onClick={() => toast.dismiss(t.id)}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium"
-                            onClick={async () => {
-                                toast.dismiss(t.id);
-                                try {
-                                    await deleteStockCountLocal(item.id);
-                                    onUpdate(item.id, {
-                                        shots: null,
-                                        each_count: null,
-                                    });
-                                    toast.success(`${item.name} unlocked`);
-                                } catch (err) {
-                                    toast.error("Failed to unlock item.");
-                                }
-                            }}
-                        >
-                            Yes, Unlock
-                        </button>
-                    </div>
-                </div>
-            ),
-            { duration: 6000, position: "top-center" },
-        );
+        try {
+            // Immediately delete from Dexie
+            await deleteStockCountLocal(item.id);
+
+            // Immediately update parent state to unlock UI and reset values
+            onUpdate(item.id, {
+                shots: null,
+                each_count: null,
+            });
+
+            // Optional: A simple, non-blocking success message
+            toast.success(`${item.name} unlocked`);
+        } catch (err) {
+            console.error("Unlock error:", err);
+            toast.error("Failed to unlock item. Please try again.");
+        }
     };
+    // ------------------------------------------------------
 
     const handleClear = (e) => {
         e.stopPropagation();
@@ -145,14 +117,14 @@ export default function EditableCountInput({
     if (isLocked) {
         const displayValue = isBottle
             ? `${item.ui_state.shots ?? "0"} shots remaining`
-            : `${item.ui_state.each_count ?? "0"} units`; // Clarified display
+            : `${item.ui_state.each_count ?? "0"} units`;
 
         return (
             <div className="w-full h-full px-3 py-2.5 text-right font-mono tabular-nums border-b border-gray-100 bg-amber-50 text-amber-900 flex items-center justify-end gap-1.5 rounded-md">
                 <Lock size={14} className="text-amber-700 flex-shrink-0" />
                 <span className="truncate text-sm">{displayValue}</span>
                 <button
-                    onClick={handleUnlock}
+                    onClick={handleUnlock} // Now triggers streamlined unlock
                     className="text-gray-400 hover:text-red-600 p-0.5 flex-shrink-0"
                     title="Unlock to edit"
                 >
@@ -209,7 +181,7 @@ export default function EditableCountInput({
             </button>
 
             {isBottle ? (
-                // SPIRIT MODE (Visual estimate of remaining shots)
+                // SPIRIT MODE
                 <div className="flex w-full gap-1.5 items-center">
                     <div className="flex flex-col w-full gap-0.5">
                         <label className="text-[10px] text-amber-700 font-bold px-1">
@@ -235,7 +207,7 @@ export default function EditableCountInput({
                     </button>
                 </div>
             ) : (
-                // --- MODIFIED: SIMPLE UNIT MODE ---
+                // SIMPLE UNIT MODE
                 <div className="flex w-full gap-1.5 items-center">
                     <div className="flex flex-col w-full gap-0.5">
                         <label className="text-[10px] text-gray-700 font-bold px-1">

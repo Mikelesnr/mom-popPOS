@@ -13,7 +13,7 @@ Route::prefix('stock')->name('stock.')->group(function () {
     Route::delete('/delete-product/{id}', [StockController::class, 'destroy'])
         ->name('delete-product');
 
-    Route::put("/add-stock/{productId}", [StockController::class, 'updateStock'])->name('add-stock');
+    Route::put("/add-stock/", [StockController::class, 'bulkUpdateStock'])->name('add-stock');
 
     Route::post('/waste', [WasteLogController::class, 'store'])->name('waste.store');
 

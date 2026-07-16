@@ -12,7 +12,7 @@ import {
     syncTablesToServer,
     syncInventoryLocal,
 } from "@/Utils/db";
-import { Category, ShotSize, CartItem } from "@/Utils/contracts.js";
+import toast from "react-hot-toast";
 
 export default function TerminalPointOfSale() {
     const { auth } = usePage().props;
@@ -20,12 +20,9 @@ export default function TerminalPointOfSale() {
     const [showTables, setShowTables] = useState(false);
     const [activeTable, setActiveTable] = useState(null);
 
-    /** @type {Category[]} */
     const [categories, setCategories] = useState([]);
-    /** @type {ShotSize[]} */
     const [shotSizes, setShotSizes] = useState([]);
     const [activeCategory, setActiveCategory] = useState(null);
-    /** @type {CartItem[]} */
     const [cart, setCart] = useState([]);
     const [isSyncing, setIsSyncing] = useState(false);
 
@@ -53,16 +50,18 @@ export default function TerminalPointOfSale() {
 
             setCategories(data.menu || []);
             setShotSizes(data.shot_sizes || []);
-            if (data.menu?.length > 0) setActiveCategory(data.menu[0].id);
+            if (data.menu?.length > 0 && !activeCategory)
+                setActiveCategory(data.menu[0].id);
         } catch (err) {
             console.error("Catalog Sync Error:", err);
+            toast.error("Failed to sync catalog from server.");
         } finally {
             setIsSyncing(false);
         }
     };
 
     const handleLoadTable = async (table) => {
-        // Correctly pull order items where orderable_id matches the table id
+        // Pull order items linked to this table
         const items = await db.order_items
             .where("orderable_id")
             .equals(table.id)
@@ -76,6 +75,7 @@ export default function TerminalPointOfSale() {
             unit_price: item.unit_price,
             subtotal: item.subtotal,
             metadata: item.metadata,
+            placed: item.placed, // Ensure placed flag is carried over
         }));
 
         setCart(cartItems);
@@ -88,11 +88,11 @@ export default function TerminalPointOfSale() {
             await syncOrdersToServer();
             await syncTablesToServer();
             await refreshCatalogFromServer();
-            await syncInventoryLocal(); // Save inventory data locally after sync
-            alert("Sync complete!");
+            await syncInventoryLocal();
+            toast.success("Sync complete!");
         } catch (err) {
             console.error("Sync failed:", err);
-            alert("Sync failed. Check your internet connection.");
+            toast.error("Sync failed. Check your internet connection.");
         } finally {
             setIsSyncing(false);
         }
@@ -104,28 +104,23 @@ export default function TerminalPointOfSale() {
                 const localData = await getCatalogLocal(shopId);
                 if (localData) {
                     setCategories(localData.menu || []);
+                    // FIX: Use localData.shot_sizes instead of data.shot_sizes
                     setShotSizes(localData.shot_sizes || []);
-                    if (localData.menu?.length > 0)
+                    if (localData.menu?.length > 0 && !activeCategory)
                         setActiveCategory(localData.menu[0].id);
                 } else {
                     await refreshCatalogFromServer();
                 }
             } catch (err) {
                 console.error("IndexedDB initialization error:", err);
+                toast.error("Failed to load local data.");
             }
         };
         loadTerminalData();
-    }, [shopId]);
-
-    /**
-     * Unified AddToCart Method
-     * This matches your OrderItem model structure (1:1).
-     * No conversion logic needed here; backend handles calculations.
-     */
+    }, [shopId, activeCategory]); // Added activeCategory to dependencies
 
     const addToCart = (product, metadata, quantity = 1) => {
         setCart((currentCart) => {
-            // Adding Date.now() to the ID makes every single click unique
             const uniqueId = Date.now();
             const cartItemId = `${product.id}-${metadata.type}-${uniqueId}`;
 
@@ -137,7 +132,6 @@ export default function TerminalPointOfSale() {
                       ? product.selling_price * 2
                       : product.selling_price;
 
-            // No 'existingIndex' check needed—we always return a new item
             return [
                 ...currentCart,
                 {
@@ -146,8 +140,9 @@ export default function TerminalPointOfSale() {
                     name: product.name,
                     quantity: quantity,
                     unit_price: parseFloat(price),
-                    subtotal: parseFloat(price) * quantity, // This is your total for the line
+                    subtotal: parseFloat(price) * quantity,
                     metadata: metadata,
+                    placed: 0, // New items start as unplaced (in JS state only)
                     orderable_id: null,
                     orderable_type: null,
                 },
@@ -165,8 +160,10 @@ export default function TerminalPointOfSale() {
         "bg-gray-600 text-white";
 
     return (
-        <div className="flex flex-col md:flex-row h-[calc(100vh-140px)] gap-2 p-1 bg-slate-900 rounded-xl overflow-hidden">
-            <div className="w-full md:w-3/4 flex flex-col p-2 bg-slate-800 space-y-2 h-full overflow-hidden">
+        // Responsive height calculation (viewport minus header) and layout stacking
+        <div className="flex flex-col md:flex-row h-[calc(100vh-80px)] gap-3 p-2 md:p-3 bg-slate-950 md:rounded-xl overflow-hidden font-sans antialiased">
+            {/* Left Panel: Categories & Products (Flex 3 on md+, full width on mobile) */}
+            <div className="w-full md:w-3/4 flex flex-col p-3 bg-slate-900 space-y-3 h-full overflow-hidden rounded-2xl md:rounded-xl md:rounded-r-none shadow-inner">
                 <SearchAndTabs
                     categories={categories}
                     activeCategory={activeCategory}
@@ -183,22 +180,26 @@ export default function TerminalPointOfSale() {
                 />
             </div>
 
-            <div className="w-full md:w-1/3 flex flex-col gap-2">
-                <TicketCart
-                    cart={cart}
-                    setCart={setCart}
-                    auth={auth}
-                    activeTable={activeTable}
-                    setActiveTable={setActiveTable}
-                />
+            {/* Right Panel: Cart & Actions (Flex 1 on md+, full width on mobile, sits below products on mobile) */}
+            <div className="w-full md:w-1/4 flex flex-col gap-3 h-[45vh] md:h-full min-h-[250px] md:min-h-0 order-first md:order-last">
+                <div className="flex-1 overflow-hidden rounded-2xl md:rounded-xl shadow-lg bg-white">
+                    <TicketCart
+                        cart={cart}
+                        setCart={setCart}
+                        auth={auth}
+                        activeTable={activeTable}
+                        setActiveTable={setActiveTable}
+                    />
+                </div>
                 <button
                     onClick={() => setShowTables(true)}
-                    className="w-full bg-amber-500 text-white font-bold py-2 rounded-lg hover:bg-amber-600"
+                    className="w-full bg-amber-500 text-slate-950 font-bold py-4 md:py-3.5 rounded-xl hover:bg-amber-400 transition duration-150 shadow text-base md:text-sm active:scale-[0.98]"
                 >
-                    View My Tables
+                    View My Open Tables
                 </button>
             </div>
 
+            {/* Tables Modal */}
             <MyOpenTables
                 auth={auth}
                 isOpen={showTables}
