@@ -71,6 +71,7 @@ class SyncOrdersController extends Controller
             return DB::transaction(function () use ($request) {
                 foreach ($request->tables as $tableData) {
                     // 1. Update or Create Table Header
+                    $payment = $tableData['payment_method'] ?? null;
                     $table = Table::updateOrCreate(
                         ['id' => $tableData['id']],
                         [
@@ -78,7 +79,7 @@ class SyncOrdersController extends Controller
                             'user_id' => $tableData['user_id'] ?? null,
                             'name' => $tableData['name'],
                             'total_amount' => $tableData['total_amount'] ?? 0,
-                            'payment_method' => $tableData['payment_method'] ?? null,
+                            'payment_method' => $payment['method'] ?? null,
                             'status' => $tableData['status'],
                             'created_at' => $tableData['created_at'],
                         ]

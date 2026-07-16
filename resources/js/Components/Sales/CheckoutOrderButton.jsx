@@ -1,28 +1,35 @@
 import React, { useState } from "react";
 import { saveOrderLocal, saveOrderItemLocal } from "@/Utils/db";
 import toast from "react-hot-toast";
-import PaymentSelectionModal from "@/Components/Sales/PaymentSelectionModal"; // Import the shared modal
+import PaymentSelectionModal from "@/Components/Sales/PaymentSelectionModal";
 
-export default function CheckoutOrderButton({ cart, auth, onClearCart }) {
+// Accept cartTotal as prop
+export default function CheckoutOrderButton({
+    cart,
+    auth,
+    onClearCart,
+    cartTotal,
+}) {
     const [showPayment, setShowPayment] = useState(false);
-    const cartTotal = cart.reduce(
-        (sum, i) => sum + (parseFloat(i.subtotal) || 0),
-        0,
-    );
 
-    const finalizeCheckout = async (method) => {
+    // finalizeCheckout now receives the paymentData object from modal
+    const finalizeCheckout = async (paymentData) => {
         const orderId = crypto.randomUUID();
         const shiftId = localStorage.getItem("terminal_shift_id");
         const now = new Date().toISOString();
 
         try {
+            // Save order with payment details
             await saveOrderLocal({
                 id: orderId,
                 shop_id: auth.user.shop_id,
                 shift_id: shiftId,
                 user_id: auth.user.id,
                 total_amount: cartTotal,
-                payment_method: method,
+                // Map the new payment data structure
+                payment_method: paymentData.method,
+                amount_tendered: paymentData.amount_tendered,
+                change_due: paymentData.change_due,
                 status: "paid",
                 created_at: now,
             });
@@ -37,14 +44,23 @@ export default function CheckoutOrderButton({ cart, auth, onClearCart }) {
                     unit_price: item.unit_price,
                     subtotal: item.subtotal,
                     metadata: item.metadata || { type: "unit" },
-                    synced_at: null,
                 });
             }
 
             onClearCart();
             setShowPayment(false);
-            toast.success("Sale completed successfully!");
+
+            // Optional: Show receipt/change toast
+            if (paymentData.method === "cash" && paymentData.change_due > 0) {
+                toast.success(
+                    `Sale complete. Change: $${paymentData.change_due.toFixed(2)}`,
+                    { duration: 5000 },
+                );
+            } else {
+                toast.success("Sale completed successfully!");
+            }
         } catch (error) {
+            console.error(error);
             toast.error("Failed to save order.");
         }
     };
@@ -54,14 +70,15 @@ export default function CheckoutOrderButton({ cart, auth, onClearCart }) {
             <button
                 disabled={cart.length === 0}
                 onClick={() => setShowPayment(true)}
-                className="w-full bg-indigo-600 text-white hover:bg-indigo-700 font-bold py-3 px-4 rounded-xl transition-all shadow disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none"
+                // Assuming you have classes defined in parent or TicketCart
+                className={/* Your Button Classes */ "w-full ..."}
             >
                 Fast Sale (${cartTotal.toFixed(2)})
             </button>
 
-            {/* Use the shared modal instead of hardcoded buttons */}
             {showPayment && (
                 <PaymentSelectionModal
+                    totalAmount={cartTotal} // Pass total to modal
                     onSelect={finalizeCheckout}
                     onCancel={() => setShowPayment(false)}
                 />
