@@ -36,66 +36,22 @@ export default function EditProductForm() {
         categories.find((c) => c.id === activeCategory)?.products || [];
 
     // Initialize form state using @inertiajs/react
-    const { data, setData, put, processing, errors } = useForm(
-        {
-            id: "",
-            name: "",
-            category_id: "",
-            unit_id: "",
-            cost_price: "",
-            selling_price: "",
-            is_perishable: false,
-            is_bottle: false,
-            bottle: {
-                capacity_ml: "",
-                tare_weight_g: "",
-                gross_weight_g: "",
-                bottle_selling_price: "",
-            },
+    const { data, setData, put, processing, errors, reset } = useForm({
+        id: "",
+        name: "",
+        category_id: "",
+        unit_id: "",
+        cost_price: "",
+        selling_price: "",
+        is_perishable: false,
+        is_bottle: false,
+        bottle: {
+            capacity_ml: "",
+            tare_weight_g: "",
+            gross_weight_g: "",
+            bottle_selling_price: "",
         },
-        {
-            // --- ADD THIS TRANSFORM HELPER ---
-            // This cleans the data just before the PUT request is sent
-            transform: (data) => ({
-                ...data,
-                // 1. Ensure numeric IDs are cast to strings for backend validation
-                id: String(data.id),
-                category_id:
-                    data.category_id === "" ? null : String(data.category_id),
-                unit_id: data.unit_id === "" ? null : String(data.unit_id),
-                cost_price:
-                    data.cost_price === "" ? null : String(data.cost_price),
-                selling_price:
-                    data.selling_price === ""
-                        ? null
-                        : String(data.selling_price),
-
-                // 2. CRITICAL FIX: If it's NOT a bottle, unset or nullify the bottle data
-                // so it passes backend validation rules (required_if).
-                bottle: data.is_bottle
-                    ? {
-                          capacity_ml:
-                              data.bottle.capacity_ml === ""
-                                  ? null
-                                  : Number(data.bottle.capacity_ml),
-                          tare_weight_g:
-                              data.bottle.tare_weight_g === ""
-                                  ? null
-                                  : Number(data.bottle.tare_weight_g),
-                          gross_weight_g:
-                              data.bottle.gross_weight_g === ""
-                                  ? null
-                                  : Number(data.bottle.gross_weight_g),
-                          bottle_selling_price:
-                              data.bottle.bottle_selling_price === ""
-                                  ? null
-                                  : Number(data.bottle.bottle_selling_price),
-                      }
-                    : null, // Sending null here allows the required_if rule to pass.
-            }),
-        },
-    );
-
+    });
     // Filter units based on the is_bottle toggle
     const filteredUnits = data.is_bottle
         ? units
@@ -113,58 +69,12 @@ export default function EditProductForm() {
             selling_price: product.selling_price || "",
             is_perishable: !!product.is_perishable,
             is_bottle: !!product.is_bottle,
-            bottle: product.bottle
-                ? { ...product.bottle }
-                : {
-                      capacity_ml: "",
-                      tare_weight_g: "",
-                      gross_weight_g: "",
-                      bottle_selling_price: "",
-                  },
-        });
-    };
-
-    // Handle form submission
-    const submit = (e) => {
-        e.preventDefault();
-
-        // Note: Ensure your transform helper is configured in useForm to clean
-        // empty strings and the nested bottle object before this request is sent.
-
-        put(route("stock.update-product", data.id), {
-            preserveScroll: true,
-            // --- FIX: Handle Success with react-hot-toast ---
-            onSuccess: async () => {
-                // 1. Show success toast
-                toast.success("Product updated successfully");
-
-                // 2. Clear the form and reset selection
-                reset();
-                if (setSelectedProduct) {
-                    setSelectedProduct(null); // Deselect from the list
-                }
-
-                // --- FIX: Sync Catalog Locally ---
-                if (shopId) {
-                    try {
-                        console.log("🔄 Syncing catalog after update...");
-                        await syncInventoryLocal(shopId);
-                        console.log("✅ Catalog sync complete.");
-                    } catch (syncErr) {
-                        console.error(
-                            "❌ Catalog sync failed after update:",
-                            syncErr,
-                        );
-                        // Optional: toast.error("Failed to sync catalog data locally.");
-                    }
-                } else {
-                    console.warn("⚠️ Shop ID not found, cannot sync catalog.");
-                }
-            },
-            // --- FIX: Handle Error with react-hot-toast ---
-            onError: (err) => {
-                console.error("Submission error:", err);
-                toast.error("Failed to update product. Please check the form.");
+            bottle: {
+                capacity_ml: product.bottle_specs?.capacity_ml || "",
+                tare_weight_g: product.bottle_specs?.tare_weight_g || "",
+                gross_weight_g: product.bottle_specs?.gross_weight_g || "",
+                bottle_selling_price:
+                    product.bottle_specs?.bottle_selling_price || "",
             },
         });
     };
@@ -466,7 +376,28 @@ export default function EditProductForm() {
             {/* Right Pane: Edit Form */}
             <div className="lg:col-span-2">
                 <form
-                    onSubmit={submit}
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        put(route("stock.update-product", data.id), {
+                            preserveScroll: true,
+                            onSuccess: async () => {
+                                toast.success("Product updated successfully!");
+                                reset();
+                                setSelectedProduct(null);
+
+                                // Sync catalog locally
+                                const shopId = auth?.user?.shop_id;
+                                if (shopId) {
+                                    await syncInventoryLocal(shopId);
+                                }
+                            },
+                            onError: () => {
+                                toast.error(
+                                    "Failed to update product. Please check the form errors.",
+                                );
+                            },
+                        });
+                    }}
                     className="bg-white p-8 rounded-2xl shadow-xl border border-gray-100"
                 >
                     <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3">

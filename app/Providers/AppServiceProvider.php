@@ -16,6 +16,7 @@ use App\Services\UnitProductCreator;
 use App\Services\BottleProductCreator;
 use App\Services\ProductUpdater;
 use App\Services\BottleProductUpdater;
+use App\Services\UnitPrice;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -33,20 +34,29 @@ class AppServiceProvider extends ServiceProvider
             return new ShotCounter($app->make(InventoryConverter::class));
         });
 
+        // Register your creators, passing the existing CostConverter singleton
         $this->app->singleton(UnitProductCreator::class, function ($app) {
-            return new UnitProductCreator();
+            return new UnitProductCreator(
+                $app->make(UnitPrice::class)
+            );
         });
 
         $this->app->singleton(BottleProductCreator::class, function ($app) {
-            return new BottleProductCreator();
+            return new BottleProductCreator(
+                $app->make(UnitPrice::class)
+            );
         });
 
         $this->app->singleton(ProductUpdater::class, function ($app) {
-            return new ProductUpdater();
+            return new ProductUpdater(
+                $app->make(UnitPrice::class)
+            );
         });
 
         $this->app->singleton(BottleProductUpdater::class, function ($app) {
-            return new BottleProductUpdater();
+            return new BottleProductUpdater(
+                $app->make(UnitPrice::class)
+            );
         });
 
         // --- REGISTER UNIT DEDUCTION SERVICE ---
@@ -58,6 +68,13 @@ class AppServiceProvider extends ServiceProvider
         // ✅ Bind LiquorDeductionService so Laravel injects the Converter automatically
         $this->app->singleton(LiquorDeductionService::class, function ($app) {
             return new LiquorDeductionService(
+                $app->make(InventoryConverter::class)
+            );
+        });
+
+        // Bind CostConvertor
+        $this->app->singleton(UnitPrice::class, function ($app) {
+            return new UnitPrice(
                 $app->make(InventoryConverter::class)
             );
         });

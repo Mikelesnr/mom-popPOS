@@ -85,4 +85,9 @@ class Product extends Model
     {
         return $this->hasOne(Stock::class, 'product_id');
     }
+
+    public function costDetails(): HasOne
+    {
+        return $this->hasOne(ProductCost::class, 'product_id');
+    }
 }
