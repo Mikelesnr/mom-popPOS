@@ -1,10 +1,19 @@
 import React, { useState, useEffect } from "react";
 import toast from "react-hot-toast";
-import { Save, Edit2, XCircle, MinusCircle, Lock, Wine } from "lucide-react";
+import {
+    Save,
+    Edit2,
+    XCircle,
+    MinusCircle,
+    Lock,
+    Scale,
+    Wine,
+    AlertTriangle,
+} from "lucide-react";
 
-// Import utilities
 import ShotCounter from "@/Utils/ShotCounter";
 import { saveStockCountLocal, deleteStockCountLocal } from "@/Utils/db";
+import SpiritWeightPopup from "./SpiritWeightPopup";
 
 export default function EditableCountInput({
     item,
@@ -13,120 +22,125 @@ export default function EditableCountInput({
     isLocked,
 }) {
     const [isEditing, setIsEditing] = useState(false);
+    const [showWeightPopup, setShowWeightPopup] = useState(false);
 
-    // 1. Determine product type
     const isBottle = ShotCounter.isBottleProduct(item.catalog_data);
 
-    // 2. Local state during editing
+    const [localFullBottles, setLocalFullBottles] = useState(
+        item.ui_state.full_bottles || "",
+    );
     const [localShots, setLocalShots] = useState(item.ui_state.shots || "");
     const [localEachCount, setLocalEachCount] = useState(
         item.ui_state.each_count || "",
     );
 
-    // Sync local edit state if external state changes
     useEffect(() => {
         if (!isEditing) {
+            setLocalFullBottles(item.ui_state.full_bottles || "");
             setLocalShots(item.ui_state.shots || "");
             setLocalEachCount(item.ui_state.each_count || "");
         }
     }, [item.ui_state, isEditing]);
 
-    // Common Save Logic
-    const performSave = async (finalValue, newUiState) => {
+    const performSave = async (totalShots, newUiState) => {
         if (isLocked) return;
 
-        let calculatedTotalBaseUnits = 0;
-
-        if (isBottle) {
-            // --- A: SPIRIT MODE ---
-            calculatedTotalBaseUnits = ShotCounter.convertShotsToMl(
-                finalValue,
-                shopShotSizeMl,
-            );
-        } else {
-            // --- B: SIMPLE UNIT MODE ---
-            calculatedTotalBaseUnits = parseFloat(finalValue) || 0;
-        }
-
         try {
-            // Save to Dexie Ledger
-            await saveStockCountLocal(item.id, calculatedTotalBaseUnits);
-
-            // Update Parent State
+            // Saving totalShots directly to Dexie as you requested
+            await saveStockCountLocal(item.id, totalShots);
             onUpdate(item.id, newUiState);
             setIsEditing(false);
         } catch (err) {
-            console.error("Error saving count locally:", err);
+            console.error("Error saving count:", err);
             toast.error("Failed to save count.");
         }
     };
 
-    // Handle Save (Direct Input)
     const handleSaveDirect = () => {
         if (isBottle) {
-            const finalShots = parseFloat(localShots) || 0;
-            if (finalShots < 0) {
-                toast.error("Shots cannot be negative");
-                return;
-            }
-            performSave(finalShots, { shots: finalShots, each_count: null });
-        } else {
-            const count = parseFloat(localEachCount) || 0;
-            if (count < 0) {
-                toast.error("Count cannot be negative");
-                return;
-            }
-            performSave(count, { each_count: count, shots: null });
-        }
-    };
+            const fBottles = parseInt(localFullBottles) || 0;
+            const pShots = parseInt(localShots) || 0;
 
-    // --- MODIFIED: STREAMLINED UNLOCK (No confirmation) ---
-    const handleUnlock = async (e) => {
-        e.stopPropagation();
-        if (!isLocked) return;
+            const totalShots =
+                ShotCounter.calculateShotsFromFullBottles(
+                    fBottles,
+                    item.catalog_data.bottle_specs,
+                    shopShotSizeMl,
+                ) + pShots;
 
-        try {
-            // Immediately delete from Dexie
-            await deleteStockCountLocal(item.id);
-
-            // Immediately update parent state to unlock UI and reset values
-            onUpdate(item.id, {
-                shots: null,
+            performSave(totalShots, {
+                full_bottles: fBottles,
+                shots: pShots,
                 each_count: null,
             });
-
-            // Optional: A simple, non-blocking success message
-            toast.success(`${item.name} unlocked`);
-        } catch (err) {
-            console.error("Unlock error:", err);
-            toast.error("Failed to unlock item. Please try again.");
+        } else {
+            const count = parseFloat(localEachCount) || 0;
+            performSave(count, {
+                each_count: count,
+                shots: null,
+                full_bottles: null,
+            });
         }
     };
-    // ------------------------------------------------------
+
+    const handlePopupApply = (calculatedShotsFromWeight) => {
+        setLocalShots(calculatedShotsFromWeight.toString());
+        setShowWeightPopup(false);
+    };
 
     const handleClear = (e) => {
         e.stopPropagation();
         if (isLocked) return;
+        setLocalFullBottles("");
         setLocalShots("");
         setLocalEachCount("");
     };
 
-    // --- RENDER LOGIC ---
+    const handleUnlock = (e) => {
+        e.stopPropagation();
+        if (!isLocked) return;
+        toast((t) => (
+            <div className="flex flex-col gap-3">
+                <p className="font-medium text-gray-900">
+                    Unlock <span className="font-bold">{item.name}</span>?
+                </p>
+                <div className="flex justify-end gap-2 mt-1">
+                    <button
+                        className="px-3 py-1 bg-gray-100 rounded text-sm"
+                        onClick={() => toast.dismiss(t.id)}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        className="px-3 py-1 bg-red-600 text-white rounded text-sm"
+                        onClick={async () => {
+                            toast.dismiss(t.id);
+                            await deleteStockCountLocal(item.id);
+                            onUpdate(item.id, {
+                                shots: null,
+                                each_count: null,
+                                full_bottles: null,
+                            });
+                        }}
+                    >
+                        Yes, Unlock
+                    </button>
+                </div>
+            </div>
+        ));
+    };
 
-    // LOCKED STATE
     if (isLocked) {
         const displayValue = isBottle
-            ? `${item.ui_state.shots ?? "0"} shots remaining`
+            ? `${item.ui_state.shots ?? "0"} shots (+${item.ui_state.full_bottles ?? "0"} full)`
             : `${item.ui_state.each_count ?? "0"} units`;
-
         return (
             <div className="w-full h-full px-3 py-2.5 text-right font-mono tabular-nums border-b border-gray-100 bg-amber-50 text-amber-900 flex items-center justify-end gap-1.5 rounded-md">
-                <Lock size={14} className="text-amber-700 flex-shrink-0" />
+                <Lock size={14} />
                 <span className="truncate text-sm">{displayValue}</span>
                 <button
-                    onClick={handleUnlock} // Now triggers streamlined unlock
-                    className="text-gray-400 hover:text-red-600 p-0.5 flex-shrink-0"
-                    title="Unlock to edit"
+                    onClick={handleUnlock}
+                    className="text-gray-400 hover:text-red-600"
                 >
                     <XCircle size={16} />
                 </button>
@@ -134,105 +148,92 @@ export default function EditableCountInput({
         );
     }
 
-    // DISPLAY MODE (Unlocked)
     if (!isEditing) {
         const hasBeenCounted = isBottle
-            ? item.ui_state.shots !== null && item.ui_state.shots !== ""
-            : item.ui_state.each_count !== null &&
-              item.ui_state.each_count !== "";
-
+            ? item.ui_state.shots !== null ||
+              item.ui_state.full_bottles !== null
+            : item.ui_state.each_count !== null;
         const displayValue = isBottle
-            ? `${item.ui_state.shots ?? "0"} shots`
+            ? `${item.ui_state.shots ?? "0"} shots (+${item.ui_state.full_bottles ?? "0"} full)`
             : `${item.ui_state.each_count ?? "0"} units`;
 
         return (
             <div
                 onClick={() => setIsEditing(true)}
-                className={`group w-full h-full px-3 py-2.5 cursor-pointer text-right font-mono tabular-nums border-b border-gray-100 rounded-md transition-colors duration-150 ${hasBeenCounted ? "bg-blue-50 text-gray-900" : "bg-blue-50/50 text-gray-400"} hover:bg-blue-100 hover:text-gray-950`}
+                className={`w-full h-full px-3 py-2.5 cursor-pointer text-right font-mono border-b rounded-md hover:bg-blue-50 ${!hasBeenCounted ? "text-gray-400" : "text-gray-900"}`}
             >
                 <div className="flex items-center justify-end gap-1.5">
                     <span className="truncate text-sm">{displayValue}</span>
-                    {isBottle && (
-                        <Wine
-                            size={15}
-                            className="text-gray-300 group-hover:text-blue-500 flex-shrink-0"
-                        />
-                    )}
-                    {hasBeenCounted && (
-                        <Edit2
-                            size={14}
-                            className="text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                        />
-                    )}
                 </div>
             </div>
         );
     }
 
-    // EDITING MODE
     return (
-        <div className="absolute inset-0 z-20 bg-white p-1 shadow-xl border-2 border-blue-400 rounded-md flex items-center gap-1.5 animate-in fade-in">
-            <button
-                onClick={handleClear}
-                className="text-gray-300 hover:text-red-500 p-1 flex-shrink-0"
-                title="Clear input"
-            >
-                <MinusCircle size={18} />
-            </button>
-
-            {isBottle ? (
-                // SPIRIT MODE
-                <div className="flex w-full gap-1.5 items-center">
-                    <div className="flex flex-col w-full gap-0.5">
-                        <label className="text-[10px] text-amber-700 font-bold px-1">
-                            EST. SHOTS LEFT
-                        </label>
+        <>
+            <div className="absolute inset-0 z-20 bg-white p-1 shadow-xl border-2 border-blue-400 rounded-md flex items-center gap-1.5">
+                <button
+                    onClick={handleClear}
+                    className="text-gray-300 hover:text-red-500"
+                >
+                    <MinusCircle size={18} />
+                </button>
+                {isBottle ? (
+                    <div className="flex w-full gap-1 items-center">
                         <input
                             type="number"
+                            placeholder="Full"
+                            value={localFullBottles}
+                            onChange={(e) =>
+                                setLocalFullBottles(e.target.value)
+                            }
+                            className="w-1/4 p-1 text-sm border rounded"
+                        />
+                        <input
+                            type="number"
+                            placeholder="Shots"
                             value={localShots}
                             onChange={(e) => setLocalShots(e.target.value)}
-                            min="0"
-                            step="0.5"
-                            placeholder="0.0"
-                            className="w-full text-sm p-1.5 border rounded border-amber-300 bg-amber-50 text-amber-900 focus:ring-1 focus:ring-amber-300 focus:border-amber-400 font-bold"
-                            autoFocus
+                            className="w-1/4 p-1 text-sm border rounded"
                         />
+                        <button
+                            onClick={() => setShowWeightPopup(true)}
+                            className="p-2 bg-gray-100 rounded"
+                        >
+                            <Scale size={16} />
+                        </button>
+                        <button
+                            onClick={handleSaveDirect}
+                            className="p-2 bg-blue-600 text-white rounded"
+                        >
+                            <Save size={16} />
+                        </button>
                     </div>
-                    <button
-                        onClick={handleSaveDirect}
-                        className="bg-blue-600 text-white p-2.5 rounded-md h-full flex items-center self-end hover:bg-blue-700 flex-shrink-0 mt-3.5"
-                        title="Save count"
-                    >
-                        <Save size={18} />
-                    </button>
-                </div>
-            ) : (
-                // SIMPLE UNIT MODE
-                <div className="flex w-full gap-1.5 items-center">
-                    <div className="flex flex-col w-full gap-0.5">
-                        <label className="text-[10px] text-gray-700 font-bold px-1">
-                            QUANTITY (Total Count)
-                        </label>
+                ) : (
+                    <div className="flex w-full gap-1 items-center">
                         <input
                             type="number"
                             value={localEachCount}
                             onChange={(e) => setLocalEachCount(e.target.value)}
-                            min="0"
-                            step="1"
-                            placeholder="0"
-                            className="w-full text-sm p-1.5 border rounded border-gray-300 focus:ring-1 focus:ring-blue-300 focus:border-blue-400"
-                            autoFocus
+                            className="w-full p-1 text-sm border rounded"
                         />
+                        <button
+                            onClick={handleSaveDirect}
+                            className="p-2 bg-blue-600 text-white rounded"
+                        >
+                            <Save size={16} />
+                        </button>
                     </div>
-                    <button
-                        onClick={handleSaveDirect}
-                        className="bg-blue-600 text-white p-2.5 rounded-md h-full flex items-center self-end hover:bg-blue-700 flex-shrink-0 mt-3.5"
-                        title="Save count"
-                    >
-                        <Save size={18} />
-                    </button>
-                </div>
+                )}
+            </div>
+            {showWeightPopup && (
+                <SpiritWeightPopup
+                    product={item}
+                    shopShotSizeMl={shopShotSizeMl}
+                    onApply={handlePopupApply}
+                    onClose={() => setShowWeightPopup(false)}
+                />
             )}
-        </div>
+        </>
     );
 }
