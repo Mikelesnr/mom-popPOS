@@ -20,21 +20,23 @@ export const NumericKeypad = ({ onConfirm }) => {
                         {n}
                     </button>
                 ))}
+
+                {/* Standardized size for the last row */}
                 <button
                     onClick={() => setVal("")}
-                    className="bg-rose-100 text-rose-700 rounded"
+                    className="p-3 bg-rose-100 text-rose-700 rounded font-bold"
                 >
                     C
                 </button>
                 <button
                     onClick={() => setVal((prev) => prev + "0")}
-                    className="bg-gray-100 rounded"
+                    className="p-3 bg-gray-100 rounded font-bold"
                 >
                     0
                 </button>
                 <button
                     onClick={() => onConfirm(parseInt(val))}
-                    className="bg-emerald-500 text-white rounded"
+                    className="p-3 bg-emerald-500 text-white rounded font-bold"
                 >
                     OK
                 </button>

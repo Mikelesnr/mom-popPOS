@@ -291,8 +291,9 @@ export default function StockCountWorksheet() {
                 </div>
 
                 {/* Search & Progress */}
-                <div className="grid grid-cols-3 gap-4 items-center">
-                    <div className="col-span-2 relative">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                    {/* Update col-span-2 to md:col-span-2 */}
+                    <div className="md:col-span-2 relative">
                         <Search
                             className="absolute left-3.5 top-2.5 text-gray-400"
                             size={20}
@@ -305,7 +306,9 @@ export default function StockCountWorksheet() {
                             className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-400 transition-all text-sm"
                         />
                     </div>
-                    <div className="col-span-1 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+
+                    {/* Progress bar container automatically stacks on mobile */}
+                    <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
                         <div className="flex justify-between text-xs text-gray-500 mb-1">
                             <span>Sync Progress</span>
                             <span className="font-medium text-blue-700">

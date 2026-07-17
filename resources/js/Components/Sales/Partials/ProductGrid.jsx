@@ -33,26 +33,31 @@ export default function ProductGrid({
 
     return (
         <>
-            <div className="flex-1 overflow-y-auto grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1.5 p-1 select-none content-start">
-                {filteredProducts.map((product) => (
-                    <button
-                        key={product.id}
-                        onClick={() => handleProductClick(product)}
-                        className={`... ${activeColorClass}`}
-                    >
-                        {product.name}
-                    </button>
-                ))}
-            </div>
+            {/* 
+                - grid-cols-2: 2 buttons across on phones (portrait)
+                - sm:grid-cols-3: 3 across on slightly larger
+                - md:grid-cols-4: 4 across on tablets
+                - lg:grid-cols-5: 5 across on desktops 
+            */}
+            <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 p-3 select-none content-start">
+                {filteredProducts.map((product, index) => {
+                    const isEven = index % 2 === 0;
 
-            {/* Existing Bottle Modal */}
-            {isModalOpen && selectedProduct && (
-                <BottleOptionModal
-                    product={selectedProduct}
-                    onClose={() => setIsModalOpen(false)}
-                    onSelect={addToCart}
-                />
-            )}
+                    return (
+                        <button
+                            key={product.id}
+                            onClick={() => handleProductClick(product)}
+                            className={`h-24 p-2 rounded-2xl text-xs font-bold transition-all flex flex-col items-center justify-center text-center break-words shadow-sm border-2 ${
+                                isEven
+                                    ? "bg-indigo-50 text-indigo-900 border-indigo-100 hover:bg-indigo-100"
+                                    : "bg-emerald-50 text-emerald-900 border-emerald-100 hover:bg-emerald-100"
+                            }`}
+                        >
+                            {product.name}
+                        </button>
+                    );
+                })}
+            </div>
 
             {/* New Unit Keypad Modal */}
             {isKeypadOpen && (
