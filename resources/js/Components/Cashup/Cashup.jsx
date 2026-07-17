@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useReactToPrint } from "react-to-print";
-import { ReceiptTemplate } from "./ReceiptTemplate";
+import { ReceiptTemplate } from "../Shared/ReceiptTemplate";
 import { Head } from "@inertiajs/react";
 
 // Canonical payment method list + display order, used everywhere totals are broken down.

@@ -1,5 +1,6 @@
 import React from "react";
 import { Category } from "@/Utils/contracts.js";
+import CustomDropdown from "@/Components/Shared/CustomDropdown";
 
 /**
  * @param {Object} props
@@ -18,21 +19,22 @@ export default function SearchAndTabs({
     refreshCatalog,
     isSyncing,
 }) {
+    // Convert categories to the format required by CustomDropdown
+    const dropdownOptions = categories.map((cat) => ({
+        label: cat.name,
+        value: cat.id,
+    }));
+
     return (
         <div className="flex items-center gap-2 border-b border-slate-700 pb-2 select-none">
-            {/* MOBILE VIEW: Dropdown */}
+            {/* MOBILE VIEW: Using CustomDropdown */}
             <div className="md:hidden flex-1">
-                <select
-                    value={activeCategory || ""}
-                    onChange={(e) => setActiveCategory(e.target.value)}
-                    className="w-full bg-slate-800 text-white border-2 border-slate-700 rounded-xl px-4 py-3 text-sm font-bold uppercase tracking-wider"
-                >
-                    {categories.map((category) => (
-                        <option key={category.id} value={category.id}>
-                            {category.name}
-                        </option>
-                    ))}
-                </select>
+                <CustomDropdown
+                    options={dropdownOptions}
+                    value={activeCategory}
+                    onChange={(val) => setActiveCategory(val)}
+                    placeholder="Select Category"
+                />
             </div>
 
             {/* DESKTOP VIEW: Horizontal Slider (Tabs) */}
@@ -47,7 +49,7 @@ export default function SearchAndTabs({
                             key={category.id}
                             type="button"
                             onClick={() => setActiveCategory(category.id)}
-                            className={`px-6 py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all min-w-[110px] text-center border-2 border-transparent shadow ${
+                            className={`px-6 py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all min-w-[110px] shrink-0 whitespace-nowrap text-center border-2 border-transparent shadow ${
                                 isSelected
                                     ? "bg-slate-100 text-slate-950 scale-105 border-yellow-400 font-extrabold shadow-inner"
                                     : dynamicColor

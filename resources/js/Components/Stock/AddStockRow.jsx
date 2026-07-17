@@ -18,14 +18,14 @@ export default function AddStockRow({ product, isLocked, onStockQueued }) {
     );
     const qohSuffix = isSpirit ? "Shots" : "Units";
 
-    // Styling classes
-    const containerClass = `grid grid-cols-12 hover:bg-gray-50/50 transition-colors gap-2 items-center px-2 py-2 ${
+    // Styling classes updated for responsive stacking[cite: 3]
+    const containerClass = `grid grid-cols-1 md:grid-cols-12 hover:bg-gray-50/50 transition-colors gap-2 items-center px-2 py-2 ${
         isLocked ? "opacity-60 bg-green-50" : ""
     }`;
 
-    const infoClass = `col-span-7 flex flex-col`;
-    // Input section takes 5 columns
-    const inputClass = `col-span-5 relative h-full min-h-[44px] flex items-center justify-end gap-2`;
+    // Column spans updated for responsive stacking[cite: 3]
+    const infoClass = `col-span-1 md:col-span-7 flex flex-col`;
+    const inputClass = `col-span-1 md:col-span-5 relative h-full min-h-[44px] flex items-center justify-end gap-2`;
 
     return (
         <article className={containerClass}>
@@ -55,13 +55,6 @@ export default function AddStockRow({ product, isLocked, onStockQueued }) {
             <div className={inputClass}>
                 <div className="flex items-center gap-2 w-full h-full">
                     <div className="flex-grow h-full relative">
-                        {/* 
-                           ALWAYS render AddStockInput. 
-                           It now internally handles:
-                           1. Showing "Tap to add" (Unlocked)
-                           2. Showing Edit Form
-                           3. Showing "Queued" + X button (Locked)
-                        */}
                         <AddStockInput
                             product={product}
                             isLocked={isLocked}

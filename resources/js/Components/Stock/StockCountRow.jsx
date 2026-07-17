@@ -24,9 +24,9 @@ export default function StockCountRow({
     const unitDescriptor = isBottle ? "bottle" : "single";
 
     return (
-        <div className="grid grid-cols-12 hover:bg-gray-50/50 transition-colors gap-2 items-center px-2 py-1">
-            {/* Product Info (Spans 8 columns now) */}
-            <div className="col-span-8 py-2 flex flex-col">
+        <div className="grid grid-cols-1 md:grid-cols-12 hover:bg-gray-50/50 transition-colors gap-2 items-center px-2 py-1">
+            {/* Product Info (Spans 8 columns on desktop, 1 on mobile)[cite: 2] */}
+            <div className="col-span-1 md:col-span-8 py-2 flex flex-col">
                 <span className="text-sm font-medium text-gray-950">
                     {product.name}
                 </span>
@@ -51,8 +51,8 @@ export default function StockCountRow({
 
             {/* --- SYSTEM QTY COLUMN REMOVED --- */}
 
-            {/* Count Input (Spans 4 columns now) */}
-            <div className="col-span-4 relative h-full min-h-[44px]">
+            {/* Count Input (Spans 4 columns on desktop, 1 on mobile)[cite: 2] */}
+            <div className="col-span-1 md:col-span-4 relative h-full min-h-[44px]">
                 <EditableCountInput
                     item={itemDataForInput}
                     onUpdate={onUpdateItemUiState}
