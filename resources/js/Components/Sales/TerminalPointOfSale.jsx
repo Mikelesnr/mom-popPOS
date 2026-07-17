@@ -5,6 +5,7 @@ import SearchAndTabs from "./Partials/SearchAndTabs";
 import ProductGrid from "./Partials/ProductGrid";
 import TicketCart from "./Partials/TicketCart";
 import MyOpenTables from "./Partials/MyOpenTables";
+import { handleSyncError } from "@/Utils/SyncUtils";
 import {
     db,
     saveCatalogLocal,
@@ -48,7 +49,9 @@ export default function TerminalPointOfSale() {
         setIsSyncing(true);
         try {
             const response = await fetch("/inventory/sync-catalog");
-            if (!response.ok) throw new Error("Network catalog fetch failed");
+
+            if (!response.ok) throw new Error(await handleSyncError(response));
+
             const data = await response.json();
             await saveCatalogLocal(shopId, {
                 menu: data.menu,
@@ -88,15 +91,19 @@ export default function TerminalPointOfSale() {
 
     const performFullSync = async () => {
         setIsSyncing(true);
+        toast.dismiss(); // Clean slate for the new sync attempt[cite: 1]
+
         try {
             await syncOrdersToServer();
             await syncTablesToServer();
             await refreshCatalogFromServer();
             await syncInventoryLocal();
+
             toast.success("Sync complete!");
         } catch (err) {
             console.error("Sync failed:", err);
-            toast.error("Sync failed. Check your internet connection.");
+            // This captures the specific message thrown by any of the above functions[cite: 1]
+            toast.error(err.message);
         } finally {
             setIsSyncing(false);
         }
