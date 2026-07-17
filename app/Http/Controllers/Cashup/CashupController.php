@@ -12,15 +12,22 @@ class CashupController extends Controller
     // Fetch summary for the Z-Slip
     public function show(Request $request, $shiftId)
     {
-        // 1. Fetch shift with shop relationship for receipt branding
-        $shift = Shift::with('shop')
+        // 1. Fetch shift with related shop, orders and tables for receipt branding
+        /** @var Shift $shift */
+        $shift = Shift::with([
+            'shop',
+            'orders.user',
+            'orders.items',
+            'tables.user',
+            'tables.items',
+        ])
             ->where('id', $shiftId)
             ->whereIn('shop_id', $request->user()->getAccessibleShopIds())
             ->firstOrFail();
 
-        // 2. Load orders with user and items; tables with user and items
-        $orders = $shift->orders()->with(['user', 'items'])->get();
-        $tables = $shift->tables()->with(['user', 'items'])->get();
+        // 2. Use the loaded relations for orders and tables
+        $orders = $shift->orders;
+        $tables = $shift->tables;
 
         // 3. Grouping logic
         $byPaymentMethod = $orders->groupBy('payment_method')->map->sum('total_amount');

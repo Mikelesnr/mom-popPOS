@@ -155,32 +155,55 @@ export default function StockCountWorksheet() {
 
     // 9. Handle Sync to Server
     const handleSync = async () => {
-        if (stats.pendingCounts === 0) {
+        const pendingCount = stats.pendingCounts; // Assuming this matches your data source
+
+        if (pendingCount === 0) {
             toast.error("No pending counts to sync.");
             return;
         }
 
-        if (
-            !window.confirm(
-                `Are you sure you want to sync ${stats.pendingCounts} items to the server?`,
-            )
-        ) {
-            return;
-        }
-
-        setIsSyncing(true);
-        try {
-            await syncStockCountsToServer();
-            toast.success("Stock counts synced successfully.");
-            // On success, useLiveQuery will auto-update locks via re-render
-        } catch (err) {
-            console.error("Sync error:", err);
-            toast.error("Sync failed. Counts are saved locally.");
-        } finally {
-            setIsSyncing(false);
-        }
+        // Trigger confirmation toast
+        toast(
+            (t) => (
+                <div className="flex flex-col gap-3">
+                    <p className="text-sm font-medium">
+                        Sync {pendingCount} item counts to the server?
+                    </p>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={async () => {
+                                toast.dismiss(t.id);
+                                setIsSyncing(true);
+                                try {
+                                    await syncStockCountsToServer();
+                                    toast.success(
+                                        "Stock counts synced successfully.",
+                                    );
+                                } catch (err) {
+                                    console.error("Sync error:", err);
+                                    toast.error(
+                                        "Sync failed. Counts are saved locally.",
+                                    );
+                                } finally {
+                                    setIsSyncing(false);
+                                }
+                            }}
+                            className="bg-green-600 text-white px-3 py-1 rounded text-xs font-bold"
+                        >
+                            Confirm Sync
+                        </button>
+                        <button
+                            onClick={() => toast.dismiss(t.id)}
+                            className="bg-gray-200 text-gray-700 px-3 py-1 rounded text-xs font-medium"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            ),
+            { duration: 5000 },
+        );
     };
-
     // Get shop shot size
     const shopShotSizeMl = dexie_catalogue?.shot_sizes?.[0]?.size_ml || 0;
 

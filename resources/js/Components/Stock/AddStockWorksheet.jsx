@@ -186,28 +186,48 @@ export default function AddStockWorksheet() {
             return;
         }
 
-        if (
-            !window.confirm(
-                `Are you sure you want to sync ${pendingCount} pending stock additions to the server?`,
-            )
-        ) {
-            return;
-        }
-
-        setIsSyncing(true);
-        try {
-            // syncStockAddsToServer handles clearing the Dexie table upon success.
-            await syncStockAddsToServer(shopId);
-            toast.success("Stock additions synced successfully.");
-            // useLiveQuery will automatically detect the cleared DB and update locks.
-        } catch (err) {
-            console.error("Sync error:", err);
-            toast.error("Sync failed. Items remain queued locally.");
-        } finally {
-            setIsSyncing(false);
-        }
+        // Trigger a toast with custom actions
+        toast(
+            (t) => (
+                <div className="flex flex-col gap-3">
+                    <p className="text-sm font-medium">
+                        Sync {pendingCount} items to the server?
+                    </p>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={async () => {
+                                toast.dismiss(t.id);
+                                setIsSyncing(true);
+                                try {
+                                    await syncStockAddsToServer(shopId);
+                                    toast.success(
+                                        "Stock additions synced successfully.",
+                                    );
+                                } catch (err) {
+                                    console.error("Sync error:", err);
+                                    toast.error(
+                                        "Sync failed. Items remain local.",
+                                    );
+                                } finally {
+                                    setIsSyncing(false);
+                                }
+                            }}
+                            className="bg-green-600 text-white px-3 py-1 rounded text-xs font-bold"
+                        >
+                            Confirm Sync
+                        </button>
+                        <button
+                            onClick={() => toast.dismiss(t.id)}
+                            className="bg-gray-200 text-gray-700 px-3 py-1 rounded text-xs font-medium"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            ),
+            { duration: 5000 },
+        );
     };
-
     // --- RENDER LOADING/ERROR STATES ---
 
     if (!shopId) {

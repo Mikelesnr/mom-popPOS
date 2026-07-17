@@ -1,10 +1,8 @@
-// ProductForm.jsx
-
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useForm } from "@inertiajs/react";
 import { useLiveQuery } from "dexie-react-hooks";
-import axios from "axios";
 import { db } from "@/Utils/db";
+import toast from "react-hot-toast";
 import {
     Package,
     Scale,
@@ -23,12 +21,11 @@ export default function ProductForm() {
     const categories = useLiveQuery(() => db.categories.toArray()) || [];
     const units = useLiveQuery(() => db.units.toArray()) || [];
 
-    // Filter units based on bottle toggle
     const filteredUnits = isBottle
         ? units
         : units.filter((u) => u.type === "unit");
 
-    const { data, setData, post, processing } = useForm({
+    const { data, setData, post, processing, errors, reset } = useForm({
         name: "",
         category_id: "",
         unit_id: "",
@@ -51,7 +48,18 @@ export default function ProductForm() {
         <form
             onSubmit={(e) => {
                 e.preventDefault();
-                post(route("stock.create-product"));
+                post(route("stock.create-product"), {
+                    onSuccess: () => {
+                        toast.success("Product created successfully!");
+                        reset();
+                        setIsBottle(false);
+                    },
+                    onError: () => {
+                        toast.error(
+                            "Failed to create product. Please check errors.",
+                        );
+                    },
+                });
             }}
             className="max-w-2xl mx-auto p-6 bg-white shadow-xl rounded-2xl border border-gray-100"
         >
@@ -75,15 +83,25 @@ export default function ProductForm() {
                             </option>
                         ))}
                     </select>
+                    {errors.category_id && (
+                        <p className="text-red-600 text-sm">
+                            {errors.category_id}
+                        </p>
+                    )}
                 </div>
 
                 {/* Name */}
-                <input
-                    value={data.name}
-                    onChange={(e) => setData("name", e.target.value)}
-                    placeholder="Product Name"
-                    className={inputClasses.replace("pl-10", "pl-4")}
-                />
+                <div>
+                    <input
+                        value={data.name}
+                        onChange={(e) => setData("name", e.target.value)}
+                        placeholder="Product Name"
+                        className={inputClasses.replace("pl-10", "pl-4")}
+                    />
+                    {errors.name && (
+                        <p className="text-red-600 text-sm">{errors.name}</p>
+                    )}
+                </div>
 
                 {/* Unit Selector */}
                 <div className="relative">
@@ -100,6 +118,9 @@ export default function ProductForm() {
                             </option>
                         ))}
                     </select>
+                    {errors.unit_id && (
+                        <p className="text-red-600 text-sm">{errors.unit_id}</p>
+                    )}
                 </div>
 
                 {/* Pricing */}
@@ -112,6 +133,11 @@ export default function ProductForm() {
                         placeholder="Cost Price"
                         className={inputClasses}
                     />
+                    {errors.cost_price && (
+                        <p className="text-red-600 text-sm">
+                            {errors.cost_price}
+                        </p>
+                    )}
                 </div>
                 <div className="relative">
                     <DollarSign className="absolute left-3 top-2.5 text-gray-400 w-5 h-5" />
@@ -124,6 +150,11 @@ export default function ProductForm() {
                         placeholder="Selling Price"
                         className={inputClasses}
                     />
+                    {errors.selling_price && (
+                        <p className="text-red-600 text-sm">
+                            {errors.selling_price}
+                        </p>
+                    )}
                 </div>
             </div>
 
@@ -159,6 +190,7 @@ export default function ProductForm() {
 
             {isBottle && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border border-blue-100 bg-blue-50 rounded-xl animate-in fade-in">
+                    {/* Capacity */}
                     <div className="relative">
                         <Beaker className="absolute left-3 top-2.5 text-blue-400 w-5 h-5" />
                         <input
@@ -172,7 +204,14 @@ export default function ProductForm() {
                             }
                             className={inputClasses}
                         />
+                        {errors["bottle.capacity_ml"] && (
+                            <p className="text-red-600 text-sm">
+                                {errors["bottle.capacity_ml"]}
+                            </p>
+                        )}
                     </div>
+
+                    {/* Tare Weight */}
                     <div className="relative">
                         <Weight className="absolute left-3 top-2.5 text-blue-400 w-5 h-5" />
                         <input
@@ -186,7 +225,14 @@ export default function ProductForm() {
                             }
                             className={inputClasses}
                         />
+                        {errors["bottle.tare_weight_g"] && (
+                            <p className="text-red-600 text-sm">
+                                {errors["bottle.tare_weight_g"]}
+                            </p>
+                        )}
                     </div>
+
+                    {/* Gross Weight */}
                     <div className="relative">
                         <Scale className="absolute left-3 top-2.5 text-blue-400 w-5 h-5" />
                         <input
@@ -200,7 +246,14 @@ export default function ProductForm() {
                             }
                             className={inputClasses}
                         />
+                        {errors["bottle.gross_weight_g"] && (
+                            <p className="text-red-600 text-sm">
+                                {errors["bottle.gross_weight_g"]}
+                            </p>
+                        )}
                     </div>
+
+                    {/* Bottle Selling Price */}
                     <div className="relative">
                         <DollarSign className="absolute left-3 top-2.5 text-blue-400 w-5 h-5" />
                         <input
@@ -214,6 +267,11 @@ export default function ProductForm() {
                             }
                             className={inputClasses}
                         />
+                        {errors["bottle.bottle_selling_price"] && (
+                            <p className="text-red-600 text-sm">
+                                {errors["bottle.bottle_selling_price"]}
+                            </p>
+                        )}
                     </div>
                 </div>
             )}
