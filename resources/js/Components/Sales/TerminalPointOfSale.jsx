@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { usePage } from "@inertiajs/react";
+import { useSwipeable } from "react-swipeable";
 import SearchAndTabs from "./Partials/SearchAndTabs";
 import ProductGrid from "./Partials/ProductGrid";
 import TicketCart from "./Partials/TicketCart";
@@ -19,13 +20,19 @@ export default function TerminalPointOfSale() {
     const shopId = auth.user.shop_id;
     const [showTables, setShowTables] = useState(false);
     const [activeTable, setActiveTable] = useState(null);
-    const [activeView, setActiveView] = useState("products"); // Toggle for mobile
+    const [activeView, setActiveView] = useState("products");
 
     const [categories, setCategories] = useState([]);
     const [shotSizes, setShotSizes] = useState([]);
     const [activeCategory, setActiveCategory] = useState(null);
     const [cart, setCart] = useState([]);
     const [isSyncing, setIsSyncing] = useState(false);
+
+    const swipeHandlers = useSwipeable({
+        onSwipedLeft: () => activeView === "products" && setActiveView("cart"),
+        onSwipedRight: () => activeView === "cart" && setActiveView("products"),
+        preventScrollOnSwipe: true,
+    });
 
     const colorPalette = [
         "bg-blue-600 hover:bg-blue-700 text-white",
@@ -43,12 +50,10 @@ export default function TerminalPointOfSale() {
             const response = await fetch("/inventory/sync-catalog");
             if (!response.ok) throw new Error("Network catalog fetch failed");
             const data = await response.json();
-
             await saveCatalogLocal(shopId, {
                 menu: data.menu,
                 shot_sizes: data.shot_sizes,
             });
-
             setCategories(data.menu || []);
             setShotSizes(data.shot_sizes || []);
             if (data.menu?.length > 0 && !activeCategory)
@@ -66,7 +71,6 @@ export default function TerminalPointOfSale() {
             .where("orderable_id")
             .equals(table.id)
             .toArray();
-
         const cartItems = items.map((item) => ({
             cartItemId: item.id,
             product_id: item.product_id,
@@ -77,10 +81,9 @@ export default function TerminalPointOfSale() {
             metadata: item.metadata,
             placed: item.placed,
         }));
-
         setCart(cartItems);
         setActiveTable(table);
-        setActiveView("cart"); // Switch to cart view on mobile when loading a table
+        setActiveView("cart");
     };
 
     const performFullSync = async () => {
@@ -130,24 +133,22 @@ export default function TerminalPointOfSale() {
                     : metadata.type === "double"
                       ? product.selling_price * 2
                       : product.selling_price;
-
             return [
                 ...currentCart,
                 {
-                    cartItemId: cartItemId,
+                    cartItemId,
                     product_id: product.id,
                     name: product.name,
-                    quantity: quantity,
+                    quantity,
                     unit_price: parseFloat(price),
                     subtotal: parseFloat(price) * quantity,
-                    metadata: metadata,
+                    metadata,
                     placed: 0,
                     orderable_id: null,
                     orderable_type: null,
                 },
             ];
         });
-        // Optional: auto-switch to cart on mobile when adding item
         if (window.innerWidth < 768) setActiveView("cart");
     };
 
@@ -162,7 +163,7 @@ export default function TerminalPointOfSale() {
 
     return (
         <div className="h-screen flex flex-col bg-slate-950 overflow-hidden font-sans antialiased">
-            {/* DESKTOP VIEW */}
+            {/* Desktop View */}
             <div className="hidden md:flex h-full gap-3 p-3">
                 <div className="w-3/4 flex flex-col p-3 bg-slate-900 rounded-xl shadow-inner">
                     <SearchAndTabs
@@ -199,8 +200,11 @@ export default function TerminalPointOfSale() {
                 </div>
             </div>
 
-            {/* MOBILE VIEW */}
-            <div className="md:hidden flex-1 flex flex-col overflow-hidden">
+            {/* Mobile Swipeable View */}
+            <div
+                {...swipeHandlers}
+                className="md:hidden flex-1 flex flex-col overflow-hidden"
+            >
                 <div className="flex-1 overflow-hidden">
                     {activeView === "products" ? (
                         <div className="h-full overflow-y-auto p-2 bg-slate-900">
@@ -232,26 +236,10 @@ export default function TerminalPointOfSale() {
                                 onClick={() => setShowTables(true)}
                                 className="w-full bg-amber-500 py-4 mt-2 rounded-xl font-bold"
                             >
-                                View My Open Tables
+                                View Open Tables
                             </button>
                         </div>
                     )}
-                </div>
-
-                {/* Mobile Navigation */}
-                <div className="flex p-2 bg-slate-900 border-t border-slate-700">
-                    <button
-                        onClick={() => setActiveView("products")}
-                        className={`flex-1 py-3 text-white font-bold ${activeView === "products" ? "bg-slate-700" : ""}`}
-                    >
-                        Products
-                    </button>
-                    <button
-                        onClick={() => setActiveView("cart")}
-                        className={`flex-1 py-3 text-white font-bold ${activeView === "cart" ? "bg-slate-700" : ""}`}
-                    >
-                        Cart ({cart.length})
-                    </button>
                 </div>
             </div>
 
