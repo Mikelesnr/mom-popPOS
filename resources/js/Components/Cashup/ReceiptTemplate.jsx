@@ -1,4 +1,4 @@
-import ApplicationLogo from "@/Components/ApplicationLogo";
+import RecieptLogo from "../RecieptLogo";
 
 const money = (value) => `$${Number(value || 0).toFixed(2)}`;
 
@@ -56,7 +56,7 @@ export const ReceiptTemplate = ({
 
         {/* Footer: Dynamic Logo */}
         <div className="mt-8 flex justify-center">
-            <ApplicationLogo className="h-12 w-12 text-black" />
+            <RecieptLogo className="h-12 w-12 text-black" />
         </div>
     </div>
 );
