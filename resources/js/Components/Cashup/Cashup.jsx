@@ -491,7 +491,7 @@ export default function Cashup({ shiftId: propShiftId }) {
                                                                 {
                                                                     staffTables.length
                                                                 }{" "}
-                                                                deferred table
+                                                                unpaid table
                                                                 {staffTables.length >
                                                                 1
                                                                     ? "s"
@@ -533,12 +533,12 @@ export default function Cashup({ shiftId: propShiftId }) {
 
                             <section className="bg-white p-5 rounded-lg border border-stone-200 shadow-sm">
                                 <h2 className="font-bold text-stone-900 mb-4">
-                                    Deferred Tables
+                                    Unpaid Tables
                                 </h2>
                                 {Object.values(data.summary.deferred_tables)
                                     .length === 0 ? (
                                     <p className="text-sm text-stone-500">
-                                        No deferred tables on this shift.
+                                        No unpaid tables on this shift.
                                     </p>
                                 ) : (
                                     <div className="space-y-3">

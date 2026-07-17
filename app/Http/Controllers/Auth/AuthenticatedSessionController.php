@@ -52,7 +52,7 @@ class AuthenticatedSessionController extends Controller
                 }
             }
 
-            if (! $authenticatedUser) {
+            if (!$authenticatedUser) {
                 throw ValidationException::withMessages([
                     'pin' => ['Invalid PIN code for this shop storefront.'],
                 ]);
@@ -69,7 +69,7 @@ class AuthenticatedSessionController extends Controller
                 ->whereNull('closed_at')
                 ->first();
 
-            if (! $currentShift) {
+            if (!$currentShift) {
                 $currentShift = Shift::create([
                     'shop_id' => $shopId,
                     'user_id' => $authenticatedUser->id,
@@ -91,7 +91,7 @@ class AuthenticatedSessionController extends Controller
 
         $user = User::where('email', $request->email)->first();
 
-        if (! $user || ! $user->password || ! Hash::check($request->password, $user->password)) {
+        if (!$user || !$user->password || !Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
                 'email' => [__('auth.failed')],
             ]);
@@ -135,7 +135,7 @@ class AuthenticatedSessionController extends Controller
                 }
             }
 
-            if (! $authenticatedUser) {
+            if (!$authenticatedUser) {
                 return response()->json(['message' => 'Invalid terminal PIN assignment.'], 401);
             }
 
@@ -145,7 +145,7 @@ class AuthenticatedSessionController extends Controller
                 ->whereNull('closed_at')
                 ->first();
 
-            if (! $currentShift) {
+            if (!$currentShift) {
                 $currentShift = Shift::create([
                     'shop_id' => $shopId,
                     'user_id' => $authenticatedUser->id,
@@ -170,7 +170,7 @@ class AuthenticatedSessionController extends Controller
 
         $user = User::where('email', $request->email)->first();
 
-        if (! $user || ! $user->password || ! Hash::check($request->password, $user->password)) {
+        if (!$user || !$user->password || !Hash::check($request->password, $user->password)) {
             return response()->json(['message' => __('auth.failed')], 401);
         }
 
@@ -193,6 +193,6 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerateToken();
 
-        return redirect('/');
+        return redirect('/login');
     }
 }
