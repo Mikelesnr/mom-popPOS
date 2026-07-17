@@ -28,6 +28,7 @@
         "lucide-react": "^1.23.0",
         "react-hot-toast": "^2.6.0",
         "react-select": "^5.10.2",
+        "react-swipeable-views": "^0.14.2",
         "react-to-print": "^3.3.0"
     }
 }

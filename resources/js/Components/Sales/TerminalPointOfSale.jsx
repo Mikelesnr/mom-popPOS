@@ -19,6 +19,7 @@ export default function TerminalPointOfSale() {
     const shopId = auth.user.shop_id;
     const [showTables, setShowTables] = useState(false);
     const [activeTable, setActiveTable] = useState(null);
+    const [activeView, setActiveView] = useState("products"); // Toggle for mobile
 
     const [categories, setCategories] = useState([]);
     const [shotSizes, setShotSizes] = useState([]);
@@ -61,25 +62,25 @@ export default function TerminalPointOfSale() {
     };
 
     const handleLoadTable = async (table) => {
-        // Pull order items linked to this table
         const items = await db.order_items
             .where("orderable_id")
             .equals(table.id)
             .toArray();
 
         const cartItems = items.map((item) => ({
-            cartItemId: item.id, // Keep ID consistent for updates
+            cartItemId: item.id,
             product_id: item.product_id,
             name: item.name,
             quantity: item.quantity,
             unit_price: item.unit_price,
             subtotal: item.subtotal,
             metadata: item.metadata,
-            placed: item.placed, // Ensure placed flag is carried over
+            placed: item.placed,
         }));
 
         setCart(cartItems);
         setActiveTable(table);
+        setActiveView("cart"); // Switch to cart view on mobile when loading a table
     };
 
     const performFullSync = async () => {
@@ -104,7 +105,6 @@ export default function TerminalPointOfSale() {
                 const localData = await getCatalogLocal(shopId);
                 if (localData) {
                     setCategories(localData.menu || []);
-                    // FIX: Use localData.shot_sizes instead of data.shot_sizes
                     setShotSizes(localData.shot_sizes || []);
                     if (localData.menu?.length > 0 && !activeCategory)
                         setActiveCategory(localData.menu[0].id);
@@ -117,13 +117,12 @@ export default function TerminalPointOfSale() {
             }
         };
         loadTerminalData();
-    }, [shopId, activeCategory]); // Added activeCategory to dependencies
+    }, [shopId, activeCategory]);
 
     const addToCart = (product, metadata, quantity = 1) => {
         setCart((currentCart) => {
             const uniqueId = Date.now();
             const cartItemId = `${product.id}-${metadata.type}-${uniqueId}`;
-
             const price =
                 metadata.type === "bottle"
                     ? product.bottle_specs?.bottle_selling_price ||
@@ -142,12 +141,14 @@ export default function TerminalPointOfSale() {
                     unit_price: parseFloat(price),
                     subtotal: parseFloat(price) * quantity,
                     metadata: metadata,
-                    placed: 0, // New items start as unplaced (in JS state only)
+                    placed: 0,
                     orderable_id: null,
                     orderable_type: null,
                 },
             ];
         });
+        // Optional: auto-switch to cart on mobile when adding item
+        if (window.innerWidth < 768) setActiveView("cart");
     };
 
     const activeCategoryData = categories.find((c) => c.id === activeCategory);
@@ -160,46 +161,100 @@ export default function TerminalPointOfSale() {
         "bg-gray-600 text-white";
 
     return (
-        // Responsive height calculation (viewport minus header) and layout stacking
-        <div className="flex flex-col md:flex-row h-[calc(100vh-80px)] gap-3 p-2 md:p-3 bg-slate-950 md:rounded-xl overflow-hidden font-sans antialiased">
-            {/* Left Panel: Categories & Products (Flex 3 on md+, full width on mobile) */}
-            <div className="w-full md:w-3/4 flex flex-col p-3 bg-slate-900 space-y-3 h-full overflow-hidden rounded-2xl md:rounded-xl md:rounded-r-none shadow-inner">
-                <SearchAndTabs
-                    categories={categories}
-                    activeCategory={activeCategory}
-                    setActiveCategory={setActiveCategory}
-                    colorPalette={colorPalette}
-                    refreshCatalog={performFullSync}
-                    isSyncing={isSyncing}
-                />
-                <ProductGrid
-                    filteredProducts={filteredProducts}
-                    shotSizes={shotSizes}
-                    addToCart={addToCart}
-                    activeColorClass={activeColorClass}
-                />
-            </div>
-
-            {/* Right Panel: Cart & Actions (Flex 1 on md+, full width on mobile, sits below products on mobile) */}
-            <div className="w-full md:w-1/4 flex flex-col gap-3 h-[45vh] md:h-full min-h-[250px] md:min-h-0 order-first md:order-last">
-                <div className="flex-1 overflow-hidden rounded-2xl md:rounded-xl shadow-lg bg-white">
-                    <TicketCart
-                        cart={cart}
-                        setCart={setCart}
-                        auth={auth}
-                        activeTable={activeTable}
-                        setActiveTable={setActiveTable}
+        <div className="h-screen flex flex-col bg-slate-950 overflow-hidden font-sans antialiased">
+            {/* DESKTOP VIEW */}
+            <div className="hidden md:flex h-full gap-3 p-3">
+                <div className="w-3/4 flex flex-col p-3 bg-slate-900 rounded-xl shadow-inner">
+                    <SearchAndTabs
+                        categories={categories}
+                        activeCategory={activeCategory}
+                        setActiveCategory={setActiveCategory}
+                        colorPalette={colorPalette}
+                        refreshCatalog={performFullSync}
+                        isSyncing={isSyncing}
+                    />
+                    <ProductGrid
+                        filteredProducts={filteredProducts}
+                        shotSizes={shotSizes}
+                        addToCart={addToCart}
+                        activeColorClass={activeColorClass}
                     />
                 </div>
-                <button
-                    onClick={() => setShowTables(true)}
-                    className="w-full bg-amber-500 text-slate-950 font-bold py-4 md:py-3.5 rounded-xl hover:bg-amber-400 transition duration-150 shadow text-base md:text-sm active:scale-[0.98]"
-                >
-                    View My Open Tables
-                </button>
+                <div className="w-1/4 flex flex-col gap-3">
+                    <div className="flex-1 overflow-hidden rounded-xl shadow-lg bg-white">
+                        <TicketCart
+                            cart={cart}
+                            setCart={setCart}
+                            auth={auth}
+                            activeTable={activeTable}
+                            setActiveTable={setActiveTable}
+                        />
+                    </div>
+                    <button
+                        onClick={() => setShowTables(true)}
+                        className="w-full bg-amber-500 py-3 rounded-xl font-bold"
+                    >
+                        View My Open Tables
+                    </button>
+                </div>
             </div>
 
-            {/* Tables Modal */}
+            {/* MOBILE VIEW */}
+            <div className="md:hidden flex-1 flex flex-col overflow-hidden">
+                <div className="flex-1 overflow-hidden">
+                    {activeView === "products" ? (
+                        <div className="h-full overflow-y-auto p-2 bg-slate-900">
+                            <SearchAndTabs
+                                categories={categories}
+                                activeCategory={activeCategory}
+                                setActiveCategory={setActiveCategory}
+                                colorPalette={colorPalette}
+                                refreshCatalog={performFullSync}
+                                isSyncing={isSyncing}
+                            />
+                            <ProductGrid
+                                filteredProducts={filteredProducts}
+                                shotSizes={shotSizes}
+                                addToCart={addToCart}
+                                activeColorClass={activeColorClass}
+                            />
+                        </div>
+                    ) : (
+                        <div className="h-full overflow-y-auto p-2 bg-white">
+                            <TicketCart
+                                cart={cart}
+                                setCart={setCart}
+                                auth={auth}
+                                activeTable={activeTable}
+                                setActiveTable={setActiveTable}
+                            />
+                            <button
+                                onClick={() => setShowTables(true)}
+                                className="w-full bg-amber-500 py-4 mt-2 rounded-xl font-bold"
+                            >
+                                View My Open Tables
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Mobile Navigation */}
+                <div className="flex p-2 bg-slate-900 border-t border-slate-700">
+                    <button
+                        onClick={() => setActiveView("products")}
+                        className={`flex-1 py-3 text-white font-bold ${activeView === "products" ? "bg-slate-700" : ""}`}
+                    >
+                        Products
+                    </button>
+                    <button
+                        onClick={() => setActiveView("cart")}
+                        className={`flex-1 py-3 text-white font-bold ${activeView === "cart" ? "bg-slate-700" : ""}`}
+                    >
+                        Cart ({cart.length})
+                    </button>
+                </div>
+            </div>
+
             <MyOpenTables
                 auth={auth}
                 isOpen={showTables}
