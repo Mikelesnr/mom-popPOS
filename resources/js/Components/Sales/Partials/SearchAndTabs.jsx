@@ -20,8 +20,23 @@ export default function SearchAndTabs({
 }) {
     return (
         <div className="flex items-center gap-2 border-b border-slate-700 pb-2 select-none">
-            {/* Categories Tabs View */}
-            <div className="flex-1 flex gap-1.5 overflow-x-auto py-1 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
+            {/* MOBILE VIEW: Dropdown */}
+            <div className="md:hidden flex-1">
+                <select
+                    value={activeCategory || ""}
+                    onChange={(e) => setActiveCategory(e.target.value)}
+                    className="w-full bg-slate-800 text-white border-2 border-slate-700 rounded-xl px-4 py-3 text-sm font-bold uppercase tracking-wider"
+                >
+                    {categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                            {category.name}
+                        </option>
+                    ))}
+                </select>
+            </div>
+
+            {/* DESKTOP VIEW: Horizontal Slider (Tabs) */}
+            <div className="hidden md:flex flex-1 gap-1.5 overflow-x-auto py-1 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
                 {categories.map((category, index) => {
                     const isSelected = activeCategory === category.id;
                     const dynamicColor =
@@ -54,7 +69,10 @@ export default function SearchAndTabs({
                 }`}
                 title="Sync Database Catalog"
             >
-                🔄 {isSyncing ? "Syncing..." : "Sync"}
+                🔄{" "}
+                <span className="hidden md:inline">
+                    {isSyncing ? "Syncing..." : "Sync"}
+                </span>
             </button>
         </div>
     );

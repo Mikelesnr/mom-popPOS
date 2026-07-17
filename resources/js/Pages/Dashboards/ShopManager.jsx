@@ -7,65 +7,84 @@ import WasteLogForm from "@/Components/Stock/WasteLogForm";
 import StockCountWorksheet from "@/Components/Stock/StockCountWorksheet";
 import Cashup from "@/Components/Cashup/Cashup";
 
+const NAV_ITEMS = [
+    { key: "pos", label: "POS Terminal" },
+    { key: "stock", label: "Add Product" },
+    { key: "edit", label: "Edit Product" },
+    { key: "add-stock", label: "Add Stock" },
+    { key: "waste-log", label: "Waste Log" },
+    { key: "stock-count", label: "Stock Count" },
+    { key: "cashup", label: "Cashup" },
+];
+
 export default function ShopManager({ auth }) {
-    const [view, setView] = useState("pos"); // 'pos', 'stock', or 'edit'
+    const [view, setView] = useState("pos");
+    const [isMenuOpen, setIsMenuOpen] = useState(false); // Toggle state for hamburger menu
 
     return (
-        <div className="space-y-6">
-            <div className="bg-white p-6 shadow-sm rounded-xl border border-gray-100">
-                <h1 className="text-2xl font-bold text-gray-900">
-                    Store Management Console
-                </h1>
+        <div className="min-h-screen bg-stone-50">
+            {/* Header */}
+            <div className="bg-[#14352E] px-4 py-5 sm:px-6 sm:py-6 flex justify-between items-center">
+                <div>
+                    <p className="text-xs uppercase tracking-widest text-emerald-300/80 mb-1">
+                        Mom&amp;Pop POS
+                    </p>
+                    <h1 className="text-xl sm:text-2xl font-bold text-white">
+                        Store Management Console
+                    </h1>
+                </div>
 
-                {/* Toggle Buttons */}
-                <div className="mt-4 flex space-x-4">
-                    <button
-                        onClick={() => setView("pos")}
-                        className={`px-4 py-2 rounded ${view === "pos" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
+                {/* Hamburger Button (Visible only on mobile) */}
+                <button
+                    onClick={() => setIsMenuOpen(!isMenuOpen)}
+                    className="sm:hidden p-2 text-white rounded-md hover:bg-[#1b483e]"
+                >
+                    <svg
+                        className="w-6 h-6"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
                     >
-                        POS Terminal
-                    </button>
-                    <button
-                        onClick={() => setView("stock")}
-                        className={`px-4 py-2 rounded ${view === "stock" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
-                    >
-                        Add New Product
-                    </button>
-                    <button
-                        onClick={() => setView("edit")}
-                        className={`px-4 py-2 rounded ${view === "edit" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
-                    >
-                        Edit Product
-                    </button>
-                    <button
-                        onClick={() => setView("add-stock")}
-                        className={`px-4 py-2 rounded ${view === "add-stock" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
-                    >
-                        Add Stock
-                    </button>
-                    <button
-                        onClick={() => setView("waste-log")}
-                        className={`px-4 py-2 rounded ${view === "waste-log" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
-                    >
-                        Waste Log
-                    </button>
-                    <button
-                        onClick={() => setView("stock-count")}
-                        className={`px-4 py-2 rounded ${view === "stock-count" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
-                    >
-                        Stock Count
-                    </button>
-                    <button
-                        onClick={() => setView("cashup")}
-                        className={`px-4 py-2 rounded ${view === "cashup" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
-                    >
-                        Cashup
-                    </button>
+                        <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d={
+                                isMenuOpen
+                                    ? "M6 18L18 6M6 6l12 12"
+                                    : "M4 6h16M4 12h16M4 18h16"
+                            }
+                        />
+                    </svg>
+                </button>
+            </div>
+
+            {/* Nav: Hamburger Menu Logic */}
+            <div
+                className={`${isMenuOpen ? "block" : "hidden"} sm:block bg-white border-b border-stone-200 shadow-sm sticky top-0 z-50`}
+            >
+                <div className="flex flex-col sm:flex-row gap-2 px-4 py-3 sm:px-6">
+                    {NAV_ITEMS.map((item) => (
+                        <button
+                            key={item.key}
+                            onClick={() => {
+                                setView(item.key);
+                                setIsMenuOpen(false); // Close menu on selection
+                            }}
+                            className={`w-full sm:w-auto text-left sm:text-center rounded-lg px-4 py-3 sm:py-2.5 font-medium transition-colors ${
+                                view === item.key
+                                    ? "bg-[#14352E] text-white"
+                                    : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                            }`}
+                        >
+                            {item.label}
+                        </button>
+                    ))}
                 </div>
             </div>
 
-            {/* Conditional Rendering */}
-            <div className="mt-6">
+            {/* Active view */}
+            <div className="p-4 sm:p-6">
                 {view === "pos" && <TerminalPointOfSale />}
                 {view === "stock" && <ProductForm />}
                 {view === "edit" && <EditProductForm />}
