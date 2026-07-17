@@ -1,4 +1,5 @@
 import Dexie from "dexie";
+import { handleSyncError } from "./SyncUtils";
 
 // Initialize the database
 export const db = new Dexie("MomnPopPWA");
@@ -18,6 +19,34 @@ db.version(9).stores({
     stock_counts: "product_id, quantity_total_base_units, created_at",
     temp_stock_adds: "product_id, added_quantity, created_at",
 });
+
+/**
+ * Just-in-Time Reconciliation
+ * Call this at the start of syncOrdersToServer and syncTablesToServer
+ */
+const getAndEnsureShiftConsistency = async () => {
+    const activeShiftId = localStorage.getItem("terminal_shift_id");
+
+    if (!activeShiftId) return; // Or handle the case where no shift is active
+
+    // Reconcile Orders
+    const staleOrders = await db.orders
+        .filter((o) => !o.synced_at && o.shift_id !== activeShiftId)
+        .toArray();
+
+    for (const order of staleOrders) {
+        await db.orders.update(order.id, { shift_id: activeShiftId });
+    }
+
+    // Reconcile Tables
+    const staleTables = await db.open_tables
+        .filter((t) => !t.synced_at && t.shift_id !== activeShiftId)
+        .toArray();
+
+    for (const table of staleTables) {
+        await db.open_tables.update(table.id, { shift_id: activeShiftId });
+    }
+};
 
 /**
  * CATALOG HELPERS
@@ -128,47 +157,35 @@ const attachItemsToRecords = async (records) => {
  * SYNC LOGIC: ORDERS
  */
 export const syncOrdersToServer = async () => {
-    console.log("🔄 Starting order sync...");
+    await getAndEnsureShiftConsistency();
     const unsyncedOrders = await db.orders
-        .filter((order) => order.synced_at == null)
+        .filter((o) => o.synced_at == null)
         .toArray();
-
     if (unsyncedOrders.length === 0) return;
 
-    const payload = await attachItemsToRecords(unsyncedOrders);
+    const response = await fetch("/sales/sync-orders", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-TOKEN": getCsrfToken(),
+        },
+        body: JSON.stringify({
+            orders: await attachItemsToRecords(unsyncedOrders),
+        }),
+    });
 
-    try {
-        const response = await fetch("/sales/sync-orders", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-CSRF-TOKEN": getCsrfToken(),
-            },
-            body: JSON.stringify({ orders: payload }),
-        });
+    if (!response.ok) {
+        // This will pass the specific message to the catch block
+        throw new Error(await handleSyncError(response));
+    }
 
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            console.error(
-                "❌ Server rejected sync:",
-                response.status,
-                errorData,
-            );
-            throw new Error(`Server returned ${response.status}`);
-        }
-
-        const now = new Date().toISOString();
-        for (const order of unsyncedOrders) {
-            await db.orders.update(order.id, { synced_at: now });
-            await db.order_items
-                .where("orderable_id")
-                .equals(order.id)
-                .modify({ synced_at: now });
-        }
-        console.log("✅ Order sync complete.");
-    } catch (err) {
-        console.error("❌ Order sync failed:", err);
-        throw err;
+    const now = new Date().toISOString();
+    for (const order of unsyncedOrders) {
+        await db.orders.update(order.id, { synced_at: now });
+        await db.order_items
+            .where("orderable_id")
+            .equals(order.id)
+            .modify({ synced_at: now });
     }
 };
 
@@ -178,69 +195,32 @@ export const syncOrdersToServer = async () => {
  * off the device (deferred at end of shift).
  */
 export const syncTablesToServer = async () => {
-    console.log(
-        "🔄 Starting table sync (filtering for 'closed' or 'deferred')...",
-    );
-
-    // Use a JS filter to check if status is in our array of finalized states
-    const finalizedStatuses = ["closed", "deferred"];
-
+    await getAndEnsureShiftConsistency();
     const tablesToSync = await db.open_tables
-        .filter((table) => {
-            // Must not be synced yet
-            const isUnsynced = table.synced_at == null;
-            // Must be either closed or deferred
-            const isFinalized = finalizedStatuses.includes(table.status);
-
-            return isUnsynced && isFinalized;
-        })
+        .filter((t) => t.synced_at == null)
         .toArray();
+    if (tablesToSync.length === 0) return;
 
-    if (tablesToSync.length === 0) {
-        console.log(
-            "ℹ️ No unsynced closed/deferred tables found. Sync skipped.",
-        );
-        return;
-    }
+    const response = await fetch("/sales/sync-tables", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-TOKEN": getCsrfToken(),
+        },
+        body: JSON.stringify({
+            tables: await attachItemsToRecords(tablesToSync),
+        }),
+    });
 
-    console.log(`ℹ️ Found ${tablesToSync.length} tables to sync.`);
+    if (!response.ok) throw new Error(await handleSyncError(response));
 
-    const payload = await attachItemsToRecords(tablesToSync);
-
-    try {
-        const response = await fetch("/sales/sync-tables", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-CSRF-TOKEN": getCsrfToken(),
-            },
-            body: JSON.stringify({ tables: payload }),
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            console.error(
-                "❌ Server rejected sync:",
-                response.status,
-                errorData,
-            );
-            throw new Error(`Server returned ${response.status}`);
-        }
-
-        // Mark local records as synced so they don't send again
-        const now = new Date().toISOString();
-        for (const table of tablesToSync) {
-            await db.open_tables.update(table.id, { synced_at: now });
-            // Also mark items belonging to these tables as synced
-            await db.order_items
-                .where("orderable_id")
-                .equals(table.id)
-                .modify({ synced_at: now });
-        }
-        console.log("✅ Table sync complete. Local records marked as synced.");
-    } catch (err) {
-        console.error("❌ Table sync failed:", err);
-        throw err;
+    const now = new Date().toISOString();
+    for (const table of tablesToSync) {
+        await db.open_tables.update(table.id, { synced_at: now });
+        await db.order_items
+            .where("orderable_id")
+            .equals(table.id)
+            .modify({ synced_at: now });
     }
 };
 

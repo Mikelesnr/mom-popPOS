@@ -6,13 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Table;
-use App\Models\Product;
+use App\Models\Shift;
 // Import the services registered as singletons in AppServiceProvider
 use App\Services\UnitDeductionService;
 use App\Services\LiquorDeductionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
 
 class SyncOrdersController extends Controller
 {
@@ -24,8 +25,8 @@ class SyncOrdersController extends Controller
         $request->validate(['orders' => 'required|array']);
 
         try {
-            // Wrap the entire sync process in a database transaction
-            // to ensure data integrity.
+            $this->validateShift($request->orders[0]['shift_id']);
+
             return DB::transaction(function () use ($request) {
                 foreach ($request->orders as $orderData) {
                     // 1. Update or Create the Order Header
@@ -54,8 +55,10 @@ class SyncOrdersController extends Controller
             });
 
         } catch (\Exception $e) {
+            // Return 403 for shift mismatches, 500 for other errors
+            $status = ($e->getMessage() === 'Shift out of sync. Please re-login.') ? 403 : 500;
             Log::error('Sync Orders Error: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to sync orders.'], 500);
+            return response()->json(['error' => $e->getMessage()], $status);
         }
     }
 
@@ -68,6 +71,8 @@ class SyncOrdersController extends Controller
         $request->validate(['tables' => 'required|array']);
 
         try {
+            $this->validateShift($request->tables[0]['shift_id']);
+
             return DB::transaction(function () use ($request) {
                 foreach ($request->tables as $tableData) {
                     // 1. Update or Create Table Header
@@ -97,8 +102,10 @@ class SyncOrdersController extends Controller
             });
 
         } catch (\Exception $e) {
-            Log::error('Sync Tables Error: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to sync tables.'], 500);
+            // Return 403 for shift mismatches, 500 for other errors
+            $status = ($e->getMessage() === 'Shift out of sync. Please re-login.') ? 403 : 500;
+            Log::error('Sync Orders Error: ' . $e->getMessage());
+            return response()->json(['error' => $e->getMessage()], $status);
         }
     }
 
@@ -169,6 +176,30 @@ class SyncOrdersController extends Controller
             default:
                 Log::warning("Unknown sale type '{$saleType}' for product ID {$item->product_id}. No stock deduction attempted.");
                 break;
+        }
+    }
+
+
+    private function validateShift(string $requestShiftId)
+    {
+        $shopId = Auth::user()->shop_id;
+
+        $activeShift = Shift::where('shop_id', $shopId)
+            ->whereNull('closed_at')
+            ->first();
+
+        // LOGGING: See exactly what the server is comparing
+        \Log::info('Shift Validation Check:', [
+            'request_shift_id' => $requestShiftId,
+            'active_shift_id' => $activeShift ? $activeShift->id : 'NULL',
+            'shop_id' => $shopId
+        ]);
+
+        if (!$activeShift || $activeShift->id !== $requestShiftId) {
+            \Log::warning('Shift Validation FAILED:', [
+                'reason' => !$activeShift ? 'No active shift found' : 'ID mismatch'
+            ]);
+            throw new \Exception('Shift out of sync. Please re-login.');
         }
     }
 }
