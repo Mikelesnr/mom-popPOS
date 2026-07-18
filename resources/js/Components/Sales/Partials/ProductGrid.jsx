@@ -1,7 +1,7 @@
 // ProductGrid.jsx
 import React, { useState } from "react";
 import BottleOptionModal from "@/Components/Sales/Partials/BottleOptionModal";
-import { NumericKeypad } from "@/Components/Shared/NumericKeypad"; // Update path as needed
+import { NumericKeypad } from "@/Components/Shared/NumericKeypad";
 
 export default function ProductGrid({
     filteredProducts,
@@ -14,12 +14,10 @@ export default function ProductGrid({
     const [isKeypadOpen, setIsKeypadOpen] = useState(false);
 
     const handleProductClick = (product) => {
+        setSelectedProduct(product);
         if (product.bottle_specs) {
-            setSelectedProduct(product);
             setIsModalOpen(true);
         } else {
-            // Instead of prompt, open the keypad
-            setSelectedProduct(product);
             setIsKeypadOpen(true);
         }
     };
@@ -33,12 +31,6 @@ export default function ProductGrid({
 
     return (
         <>
-            {/* 
-                - grid-cols-2: 2 buttons across on phones (portrait)
-                - sm:grid-cols-3: 3 across on slightly larger
-                - md:grid-cols-4: 4 across on tablets
-                - lg:grid-cols-5: 5 across on desktops 
-            */}
             <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 p-3 select-none content-start">
                 {filteredProducts.map((product, index) => {
                     const isEven = index % 2 === 0;
@@ -59,12 +51,21 @@ export default function ProductGrid({
                 })}
             </div>
 
-            {/* New Unit Keypad Modal */}
+            {/* Bottle Option Modal for spirits */}
+            {isModalOpen && (
+                <BottleOptionModal
+                    product={selectedProduct}
+                    onClose={() => setIsModalOpen(false)}
+                    onSelect={addToCart}
+                />
+            )}
+
+            {/* Standard Unit Keypad Modal */}
             {isKeypadOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
                     <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
                         <h2 className="font-bold mb-4 text-center">
-                            Quantity for {selectedProduct.name}
+                            Quantity for {selectedProduct?.name}
                         </h2>
                         <NumericKeypad onConfirm={handleUnitConfirm} />
                         <button

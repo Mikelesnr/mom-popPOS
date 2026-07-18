@@ -1,13 +1,15 @@
+// MyOpenTables.jsx
 import React, { useEffect, useState } from "react";
 import { db } from "@/Utils/db";
 import { X, AlertTriangle, Clock3, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
-import CustomDropdown from "@/Components/Shared/CustomDropdown"; // Corrected import
+import CustomDropdown from "@/Components/Shared/CustomDropdown";
 
 export default function MyOpenTables({ auth, isOpen, onClose, onSelect }) {
     const [tables, setTables] = useState([]);
     const [deferralTarget, setDeferralTarget] = useState("");
     const [isDeferring, setIsDeferring] = useState(false);
+    const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -29,20 +31,12 @@ export default function MyOpenTables({ auth, isOpen, onClose, onSelect }) {
         }
     };
 
-    const handleDeferTable = async () => {
-        if (!deferralTarget) return;
-
-        const selectedTable = tables.find((t) => t.id === deferralTarget);
-
-        if (
-            !window.confirm(
-                `Are you sure you want to defer ${selectedTable?.name}?`,
-            )
-        )
-            return;
-
+    const confirmDeferral = async () => {
+        setIsConfirmModalOpen(false);
         setIsDeferring(true);
+
         try {
+            const selectedTable = tables.find((t) => t.id === deferralTarget);
             await db.open_tables.update(deferralTarget, {
                 status: "deferred",
                 updated_at: new Date().toISOString(),
@@ -70,10 +64,6 @@ export default function MyOpenTables({ auth, isOpen, onClose, onSelect }) {
                             <Clock3 className="text-indigo-600" />
                             My Open Tables ({tables.length})
                         </h2>
-                        <p className="text-xs text-gray-500 mt-1">
-                            Please defer all unpaid tables before performing
-                            cash-up.
-                        </p>
                     </div>
                     <button
                         onClick={onClose}
@@ -84,7 +74,7 @@ export default function MyOpenTables({ auth, isOpen, onClose, onSelect }) {
                 </div>
 
                 <div className="p-5 space-y-6">
-                    {/* Deferral Section using CustomDropdown */}
+                    {/* Deferral Section */}
                     {tables.length > 0 && (
                         <div className="bg-amber-50 border-l-4 border-amber-400 p-4 rounded-r-lg space-y-3">
                             <h4 className="font-semibold text-amber-900 flex items-center gap-2">
@@ -105,7 +95,7 @@ export default function MyOpenTables({ auth, isOpen, onClose, onSelect }) {
                                 </div>
 
                                 <button
-                                    onClick={handleDeferTable}
+                                    onClick={() => setIsConfirmModalOpen(true)}
                                     disabled={!deferralTarget || isDeferring}
                                     className="w-full sm:w-auto px-5 py-4 bg-amber-600 text-white rounded-xl font-bold text-base hover:bg-amber-700 transition-colors disabled:bg-gray-300 flex items-center justify-center gap-2"
                                 >
@@ -148,6 +138,34 @@ export default function MyOpenTables({ auth, isOpen, onClose, onSelect }) {
                     </div>
                 </div>
             </div>
+
+            {/* Confirmation Modal */}
+            {isConfirmModalOpen && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
+                    <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
+                        <h2 className="font-bold text-lg mb-4">
+                            Confirm Deferral
+                        </h2>
+                        <p className="mb-6 text-gray-600">
+                            Are you sure you want to defer this table?
+                        </p>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setIsConfirmModalOpen(false)}
+                                className="flex-1 py-3 bg-gray-200 rounded-xl font-bold"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmDeferral}
+                                className="flex-1 py-3 bg-amber-600 text-white rounded-xl font-bold"
+                            >
+                                Confirm
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
