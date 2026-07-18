@@ -12,29 +12,29 @@ class Shift extends Model
     use HasUuids;
 
     protected $fillable = [
-        'shop_id', 
-        'user_id', 
-        'opened_at', 
+        'shop_id',
+        'user_id',
+        'opened_at',
         'closed_at',
-        'blind_cash_reported', 
-        'blind_ecocash_reported', 
-        'blind_swipe_reported', 
+        'blind_cash_reported',
+        'blind_ecocash_reported',
+        'blind_swipe_reported',
         'blind_onemoney_reported'
     ];
 
-    public function shop(): BelongsTo 
-    { 
-        return $this->belongsTo(Shop::class, 'shop_id'); 
+    public function shop(): BelongsTo
+    {
+        return $this->belongsTo(Shop::class, 'shop_id');
     }
 
-    public function user(): BelongsTo 
-    { 
-        return $this->belongsTo(User::class, 'user_id'); 
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
     }
 
-    public function orders(): HasMany 
-    { 
-        return $this->hasMany(Order::class, 'shift_id'); 
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class, 'shift_id');
     }
 
     /**
@@ -43,5 +43,15 @@ class Shift extends Model
     public function tables(): HasMany
     {
         return $this->hasMany(Table::class, 'shift_id');
+    }
+
+    public function expenses(): HasMany
+    {
+        return $this->hasMany(Expense::class, 'shift_id');
+    }
+
+    public function wasteLogs(): HasMany
+    {
+        return $this->hasMany(WasteLog::class, 'shift_id');
     }
 }

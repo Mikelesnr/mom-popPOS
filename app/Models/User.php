@@ -89,6 +89,11 @@ class User extends Authenticatable
         return $this->hasMany(Table::class, 'user_id');
     }
 
+    function expenses(): HasMany
+    {
+        return $this->hasMany(Table::class, 'user_id');
+    }
+
     public function shifts(): HasMany
     {
         return $this->hasMany(Shift::class, 'user_id');

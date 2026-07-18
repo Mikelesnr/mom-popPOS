@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Shift;
+use App\Models\Shop;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,6 +29,9 @@ class AuthenticatedSessionController extends Controller
         ]);
     }
 
+    /**
+     * Handle an incoming authentication request (Standard PWA/Web Flow).
+     */
     /**
      * Handle an incoming authentication request (Standard PWA/Web Flow).
      */
@@ -58,8 +62,7 @@ class AuthenticatedSessionController extends Controller
                 ]);
             }
 
-            // FIX: Force 'true' for remember state on terminal logins so the session cookie 
-            // doesn't immediately drop on the subsequent Inertia redirect.
+            // Force 'true' for remember state on terminal logins
             Auth::login($authenticatedUser, true);
             $request->session()->regenerate();
 
@@ -77,8 +80,15 @@ class AuthenticatedSessionController extends Controller
                 ]);
             }
 
-            // Attach shift_id to session for quick access
-            session(['shift_id' => $currentShift->id]);
+            // Retrieve the shop relationship to get the type
+            $shop = $authenticatedUser->shop;
+
+            // Attach shift_id, shop_id, and shop_type to session
+            session([
+                'shift_id' => $currentShift->id,
+                'shop_id' => $shopId,
+                'shop_type' => $shop ? $shop->shop_type : null,
+            ]);
 
             return redirect()->intended(route('dashboard', absolute: false));
         }
@@ -97,7 +107,6 @@ class AuthenticatedSessionController extends Controller
             ]);
         }
 
-        // Safe fallback: Default to true if specified, or if session dropping bugs persist on this environment
         $remember = $request->has('remember') ? $request->boolean('remember') : true;
 
         Auth::login($user, $remember);

@@ -12,26 +12,27 @@ class Expense extends Model
     use HasUuids;
 
     protected $fillable = [
-        'shop_id',
+        'shift_id',
         'name',
         'amount',
         'type',
         'notes',
+        'user_id',
     ];
 
     protected function casts(): array
     {
         return [
             'amount' => 'decimal:2',
-            'type'   => ExpenseType::class, // Automatically transforms into the Enum instance
+            'type' => ExpenseType::class,
         ];
     }
 
     /**
      * Multi-tenancy relation.
      */
-    public function shop(): BelongsTo
+    public function shift(): BelongsTo
     {
-        return $this->belongsTo(Shop::class, 'shop_id');
+        return $this->belongsTo(Shift::class, 'shift_id');
     }
 }

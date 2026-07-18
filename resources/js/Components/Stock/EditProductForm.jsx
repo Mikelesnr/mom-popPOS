@@ -23,6 +23,8 @@ export default function EditProductForm() {
     const { auth } = usePage().props;
     const [activeCategory, setActiveCategory] = useState(null);
     const [selectedProduct, setSelectedProduct] = useState(null);
+    const shopType = localStorage.getItem("terminal_shop_type");
+    const isShopMode = shopType === "shop";
 
     // Fetch data from local Dexie DB
     const catalogData = useLiveQuery(() =>
@@ -196,18 +198,22 @@ export default function EditProductForm() {
                 />
             </div>
 
-            <div className="flex items-center justify-between p-4 border border-gray-200 rounded-xl bg-white">
-                <label className="flex items-center gap-3 text-gray-700 font-medium">
-                    <Beaker className="w-6 h-6 text-blue-500" />
-                    Is this item a bottle?
-                </label>
-                <input
-                    type="checkbox"
-                    checked={data.is_bottle}
-                    onChange={(e) => setData("is_bottle", e.target.checked)}
-                    className="w-6 h-6 text-blue-600 rounded cursor-pointer focus:ring-blue-500"
-                />
-            </div>
+            {!isShopMode && (
+                <div className="my-6 p-4 bg-gray-50 rounded-lg flex items-center justify-between">
+                    <span className="font-medium text-gray-700">
+                        Is this item a bottle?
+                    </span>
+                    <input
+                        type="checkbox"
+                        checked={data.is_bottle}
+                        onChange={(e) => {
+                            setData("is_bottle", e.target.checked);
+                            if (isBottle) setIsBottle(e.target.checked); // Adjust based on your local state usage
+                        }}
+                        className="w-5 h-5 text-blue-600 cursor-pointer"
+                    />
+                </div>
+            )}
         </div>
     );
 

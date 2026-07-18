@@ -20,6 +20,8 @@ export default function ProductForm() {
     const [isBottle, setIsBottle] = useState(false);
     const categories = useLiveQuery(() => db.categories.toArray()) || [];
     const units = useLiveQuery(() => db.units.toArray()) || [];
+    const shopType = localStorage.getItem("terminal_shop_type");
+    const isShopMode = shopType === "shop";
 
     const filteredUnits = isBottle
         ? units
@@ -173,20 +175,22 @@ export default function ProductForm() {
             </div>
 
             {/* Bottle Toggle */}
-            <div className="my-6 p-4 bg-gray-50 rounded-lg flex items-center justify-between">
-                <span className="font-medium text-gray-700">
-                    Is this item a bottle?
-                </span>
-                <input
-                    type="checkbox"
-                    checked={isBottle}
-                    onChange={(e) => {
-                        setIsBottle(e.target.checked);
-                        setData("is_bottle", e.target.checked);
-                    }}
-                    className="w-5 h-5 text-blue-600 cursor-pointer"
-                />
-            </div>
+            {!isShopMode && (
+                <div className="my-6 p-4 bg-gray-50 rounded-lg flex items-center justify-between">
+                    <span className="font-medium text-gray-700">
+                        Is this item a bottle?
+                    </span>
+                    <input
+                        type="checkbox"
+                        checked={isBottle}
+                        onChange={(e) => {
+                            setIsBottle(e.target.checked);
+                            setData("is_bottle", e.target.checked);
+                        }}
+                        className="w-5 h-5 text-blue-600 cursor-pointer"
+                    />
+                </div>
+            )}
 
             {isBottle && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border border-blue-100 bg-blue-50 rounded-xl animate-in fade-in">

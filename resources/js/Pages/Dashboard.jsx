@@ -7,29 +7,36 @@ import OwnerDashboard from "./Dashboards/Owner";
 import ShopManagerDashboard from "./Dashboards/ShopManager";
 import ManagerDashboard from "./Dashboards/Manger";
 import CashierDashboard from "./Dashboards/Cashier";
+import { syncUserToDexie } from "@/Utils/db";
 
-export default function Dashboard({ auth, shopId, shops, shift }) {
+export default function Dashboard({ auth, shopId, shopType, shops, shift }) {
     useEffect(() => {
+        // Handle Shop ID
         if (shopId) {
             localStorage.setItem("terminal_shop_id", shopId);
             console.log("Terminal provisioned for Shop ID:", shopId);
         }
 
+        // Handle Shop Type
+        if (shopType) {
+            localStorage.setItem("terminal_shop_type", shopType);
+            console.log("Terminal provisioned for Shop Type:", shopType);
+        }
+
+        // Handle Shift
         if (shift) {
             const localShift = localStorage.getItem("terminal_shift_id");
-
-            if (!localShift) {
+            if (!localShift || localShift !== shift.id) {
                 localStorage.setItem("terminal_shift_id", shift.id);
-                console.log("Shift provisioned:", shift.id);
-            } else if (localShift !== shift.id) {
-                localStorage.setItem("terminal_shift_id", shift.id);
-                console.log("Shift updated to:", shift.id);
             }
         } else {
             localStorage.removeItem("terminal_shift_id");
-            console.log("No active shift found, cleared local shift.");
         }
-    }, [shopId, shift]);
+
+        if (auth.user) {
+            syncUserToDexie(auth.user);
+        }
+    }, [auth.user, shopId, shopType, shift]);
 
     const userRole = auth.user.role;
 
