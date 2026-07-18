@@ -29,55 +29,31 @@ class RegisteredUserController extends Controller
     /**
      * Handle an incoming registration request (Standard PWA/Web Flow).
      */
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request)
     {
-        // If shop_id is provided, this is a front-of-house staff member
-        $isStaff = $request->filled('shop_id'); 
-
         $request->validate([
-            'name' => 'required|string|max:255',
-            // Management/Owners need emails; staff do not
-            'email' => [
-                $isStaff ? 'nullable' : 'required',
-                'string',
-                'lowercase',
-                'email',
-                'max:255',
-                'unique:' . User::class
-            ],
-            'password' => [$isStaff ? 'nullable' : 'required', 'confirmed', Rules\Password::defaults()],
-            'role' => ['required', Rule::enum(UserRole::class)],
-            'shop_id' => ['nullable', 'exists:shops,id'],
-            // Staff MUST have a 4-digit login PIN if they don't have an email/password login
-            'pin' => [$isStaff ? 'required' : 'nullable', 'string', 'size:4'],
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:' . User::class],
+            'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
 
-        $roleEnum = UserRole::from($request->role);
-
+        // Create the new user with 'owner' role
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
-            'password' => $request->password ? Hash::make($request->password) : null,
-            'role' => $roleEnum,
-            // Double safeguard: owners or system staff never save a shop_id directly
-            'shop_id' => $isStaff ? $request->shop_id : null,
-            'pin' => $request->pin,
-            // Bypass email verification friction entirely by marking it verified if an email exists
-            'email_verified_at' => $request->email ? now() : null,
+            'password' => Hash::make($request->password),
+            'role' => 'owner',
         ]);
 
+        // Fire the registered event
         event(new Registered($user));
 
-        // Auto-login if it's an initial Owner setup flow
-        if ($roleEnum === UserRole::OWNER) {
-            Auth::login($user);
-            return redirect(route('dashboard', absolute: false));
-        }
+        // Log the user in immediately
+        Auth::login($user);
 
-        // Return back cleanly if an owner/manager is provisioning staff accounts inside the dashboard
-        return back()->with('success', 'Staff account provisioned successfully.');
+        // Redirect to the dashboard
+        return redirect(route('dashboard', absolute: false));
     }
-
     /**
      * API Edge Sync / Terminal Provisioning Flow
      */
