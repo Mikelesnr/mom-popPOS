@@ -2,36 +2,35 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Inertia\Inertia;
 use App\Models\Shop;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Http\Request;
 
 class ShopController extends Controller
 {
-    public function create()
-    {
-        return Inertia::render('Shop/Create');
-    }
-
     public function store(Request $request)
     {
         $request->validate([
             'name' => 'required|string|max:255',
+            'shop_type' => 'required',
         ]);
 
-        Shop::create([
-            'name' => $request->name,
-            'owner_id' => Auth::id(),
-        ]);
+        // Create the shop
+        $shop = Shop::create($request->only(['name', 'shop_type']));
 
-        return redirect()->route('dashboard')->with('status', 'Shop created successfully!');
+        // Link the current user as an owner
+        $request->user()->shopsOwned()->attach($shop->id);
+
+        return redirect()->route('dashboard')->with('success', 'Shop created successfully.');
     }
 
-    public function destroy(Shop $shop)
+    public function update(Request $request, Shop $shop)
     {
-        $shop->delete();
+        // Authorization: Ensure the user actually owns this shop
+        if (!$request->user()->shopsOwned->contains($shop->id)) {
+            abort(403);
+        }
 
-        return redirect()->route('dashboard')->with('status', 'Shop deleted successfully!');
+        $shop->update($request->validate(['name' => 'string']));
+        return back()->with('success', 'Shop updated.');
     }
 }
