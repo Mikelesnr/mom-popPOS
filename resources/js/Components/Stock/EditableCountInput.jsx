@@ -34,6 +34,9 @@ export default function EditableCountInput({
         item.ui_state.each_count || "",
     );
 
+    const shopType = localStorage.getItem("terminal_shop_type");
+    const isShopMode = shopType === "shop";
+
     useEffect(() => {
         if (!isEditing) {
             setLocalFullBottles(item.ui_state.full_bottles || "");
@@ -178,7 +181,7 @@ export default function EditableCountInput({
                 >
                     <MinusCircle size={18} />
                 </button>
-                {isBottle ? (
+                {isBottle && !isShopMode ? (
                     <div className="flex w-full gap-1 items-center">
                         <input
                             type="number"

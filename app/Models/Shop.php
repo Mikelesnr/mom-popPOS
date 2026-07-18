@@ -6,6 +6,7 @@ use App\Enums\ShopType;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
@@ -48,7 +49,7 @@ class Shop extends Model
     public function owners(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'shop_owners', 'shop_id', 'user_id')
-                    ->withTimestamps();
+            ->withTimestamps();
     }
     /**
      * Get all users (managers, cashiers, bar staff) bound to this shop[cite: 40].

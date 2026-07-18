@@ -6,6 +6,8 @@ import AddStockWorksheet from "@/Components/Stock/AddStockWorksheet";
 import WasteLogForm from "@/Components/Stock/WasteLogForm";
 import StockCountWorksheet from "@/Components/Stock/StockCountWorksheet";
 import Cashup from "@/Components/Cashup/Cashup";
+import ExpenseManager from "@/Components/Expenses/ExpenseManager";
+import AllTables from "@/Components/Sales/ALLTables";
 
 const NAV_ITEMS = [
     { key: "pos", label: "POS Terminal" },
@@ -15,6 +17,8 @@ const NAV_ITEMS = [
     { key: "waste-log", label: "Waste Log" },
     { key: "stock-count", label: "Stock Count" },
     { key: "cashup", label: "Cashup" },
+    { key: "expense", label: "Expenses" },
+    { key: "tables", label: "Tables" },
 ];
 
 export default function ShopManager({ auth }) {
@@ -92,6 +96,8 @@ export default function ShopManager({ auth }) {
                 {view === "waste-log" && <WasteLogForm />}
                 {view === "stock-count" && <StockCountWorksheet />}
                 {view === "cashup" && <Cashup />}
+                {view === "expense" && <ExpenseManager />}
+                {view === "tables" && <AllTables />}
             </div>
         </div>
     );

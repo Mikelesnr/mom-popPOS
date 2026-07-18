@@ -16,11 +16,12 @@ class WasteLog extends Model
      * @var array<int, string>
      */
     protected $fillable = [
-        'shop_id',
+        'shift_id',
         'product_id',
         'user_id',
         'quantity',
         'reason',
+        'metadata',
     ];
 
     /**
@@ -38,9 +39,9 @@ class WasteLog extends Model
     /**
      * Tenant container boundary.
      */
-    public function shop(): BelongsTo
+    public function shift(): BelongsTo
     {
-        return $this->belongsTo(Shop::class, 'shop_id');
+        return $this->belongsTo(Shift::class, 'shift_id');
     }
 
     /**

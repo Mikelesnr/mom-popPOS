@@ -257,6 +257,14 @@ export default function WasteLogForm() {
                                         ))}
                                     </select>
                                 </div>
+                                {/* Add this below the 'metadata' select block in WasteLogForm.jsx */}
+                                <div className="mt-2 p-2 bg-blue-50 rounded-lg border border-blue-100">
+                                    <p className="text-xs text-blue-700">
+                                        <strong>Action:</strong> Deducting{" "}
+                                        {data.quantity} {data.metadata}(s) from
+                                        inventory.
+                                    </p>
+                                </div>
                                 <p className="text-xs text-gray-500 mt-1">
                                     {isSpirit
                                         ? "Select 'Shots' if wasting partial liquor, or 'Full Bottle' for an entire bottle."

@@ -3,7 +3,6 @@ import TerminalPointOfSale from "@/Components/Sales/TerminalPointOfSale";
 
 // Placeholder components for when you add your stock management features
 import StockCountWorksheet from "@/Components/Stock/StockCountWorksheet";
-import WasteLogForm from "@/Components/Stock/WasteLogForm";
 
 export default function Cashier({ auth }) {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -78,15 +77,6 @@ export default function Cashier({ auth }) {
                     >
                         Stock Count
                     </button>
-                    <button
-                        onClick={() => {
-                            setView("waste");
-                            setIsMenuOpen(false);
-                        }}
-                        className="px-4 py-2 text-left rounded-lg hover:bg-gray-50 text-sm font-medium"
-                    >
-                        Waste Log
-                    </button>
                 </div>
             )}
 
@@ -94,7 +84,6 @@ export default function Cashier({ auth }) {
             <div className="transition-all">
                 {view === "pos" && <TerminalPointOfSale />}
                 {view === "stock" && <StockCountWorksheet />}
-                {view === "waste" && <WasteLogForm />}
             </div>
         </div>
     );

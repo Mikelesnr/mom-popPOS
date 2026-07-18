@@ -34,6 +34,9 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            // Adding the session data so it is available as props in your React components
+            'shopId' => fn() => $request->session()->get('shop_id'),
+            'shopType' => fn() => $request->session()->get('shop_type'),
         ];
     }
 }

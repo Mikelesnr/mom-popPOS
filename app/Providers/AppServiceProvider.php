@@ -176,7 +176,7 @@ class AppServiceProvider extends ServiceProvider
             return in_array($user->role, $allowedFrontline);
         });
 
-        Gate::define('manage-staff', function (User $user, $shopId = null) {
+        Gate::define('management', function (User $user, $shopId = null) {
             // 1. Owners check the shopsOwned relationship
             if ($user->role === UserRole::OWNER) {
                 // If a shopId is provided, check ownership; otherwise, check if they own at least one shop

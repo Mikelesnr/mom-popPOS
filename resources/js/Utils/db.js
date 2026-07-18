@@ -18,7 +18,44 @@ db.version(9).stores({
     units: "id, name, type",
     stock_counts: "product_id, quantity_total_base_units, created_at",
     temp_stock_adds: "product_id, added_quantity, created_at",
+    users: "id, name, role",
 });
+
+/**
+ * Ensures a user exists in the local Dexie store.
+ */
+export const syncUserToDexie = async (user) => {
+    const existing = await db.users.get(user.id);
+    if (!existing) {
+        await db.users.add({
+            id: user.id,
+            name: user.name,
+            role: user.role,
+        });
+        console.log(`✅ User ${user.name} synced to Dexie.`);
+    }
+};
+
+/**
+ * Clears the user cache during shift end (Cashup).
+ */
+export const clearUsersLocal = async () => {
+    await db.users.clear();
+    console.log("✅ User cache cleared after shift completion.");
+};
+
+/**
+ * Checks if there are any tables that are not synced or are still open.
+ * Returns true if the cashup should be blocked.
+ */
+export const hasPendingTables = async () => {
+    // Check for tables that are either still 'open' or have not been synced yet
+    const pendingTables = await db.open_tables
+        .filter((t) => t.status === "open" || t.synced_at === null)
+        .toArray();
+
+    return pendingTables.length > 0;
+};
 
 /**
  * Just-in-Time Reconciliation

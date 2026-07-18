@@ -12,7 +12,7 @@ class CashupController extends Controller
     // Fetch summary for the Z-Slip
     public function show(Request $request, $shiftId)
     {
-        // 1. Fetch shift with related shop, orders and tables for receipt branding
+        // 1. Fetch shift with all necessary relationships
         /** @var Shift $shift */
         $shift = Shift::with([
             'shop',
@@ -20,33 +20,50 @@ class CashupController extends Controller
             'orders.items',
             'tables.user',
             'tables.items',
+            'wasteLogs',
+            'expenses',
         ])
             ->where('id', $shiftId)
             ->whereIn('shop_id', $request->user()->getAccessibleShopIds())
             ->firstOrFail();
 
-        // 2. Use the loaded relations for orders and tables
+        // 2. Separate transactions by status
         $orders = $shift->orders;
-        $tables = $shift->tables;
+        $closedTables = $shift->tables->where('status', 'closed');
+        $deferredTables = $shift->tables->where('status', 'deferred');
+        $voidedTables = $shift->tables->where('status', 'void');
 
-        // 3. Grouping logic
-        $byPaymentMethod = $orders->groupBy('payment_method')->map->sum('total_amount');
+        // 3. Combine settled transactions (Paid Orders + Closed Tables)
+        $allSettledTransactions = $orders->merge($closedTables);
 
-        $byStaff = $orders->groupBy('user_id')->map(function ($userOrders) {
+        // 4. Calculate grouped totals
+        $byPaymentMethod = $allSettledTransactions->groupBy('payment_method')->map->sum('total_amount');
+
+        $byStaff = $allSettledTransactions->groupBy('user_id')->map(function ($transactions) {
             return [
-                'staff_name' => $userOrders->first()->user->name, // Get name from first order
-                'methods' => $userOrders->groupBy('payment_method')->map->sum('total_amount'),
-                'orders' => $userOrders // Include orders for detailed receipts
+                'staff_name' => $transactions->first()->user->name,
+                'methods' => $transactions->groupBy('payment_method')->map->sum('total_amount'),
+                'transactions' => $transactions
             ];
         });
 
+        // 5. Return JSON response
         return response()->json([
             'shop_name' => $shift->shop->name,
             'shift' => $shift,
             'summary' => [
                 'totals_by_method' => $byPaymentMethod,
                 'totals_by_staff' => $byStaff,
-                'deferred_tables' => $tables->where('status', 'deferred')->map(function ($table) {
+                'deferred_tables' => $deferredTables->map(function ($table) {
+                    return [
+                        'id' => $table->id,
+                        'name' => $table->name,
+                        'staff_name' => $table->user->name,
+                        'total_amount' => $table->total_amount,
+                        'items' => $table->items
+                    ];
+                }),
+                'voided_tables' => $voidedTables->map(function ($table) {
                     return [
                         'id' => $table->id,
                         'name' => $table->name,
