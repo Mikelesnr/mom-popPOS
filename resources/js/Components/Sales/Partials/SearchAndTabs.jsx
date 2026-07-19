@@ -1,4 +1,5 @@
 import React from "react";
+import { RefreshCw } from "lucide-react";
 import { Category } from "@/Utils/contracts.js";
 import CustomDropdown from "@/Components/Shared/CustomDropdown";
 
@@ -26,7 +27,7 @@ export default function SearchAndTabs({
     }));
 
     return (
-        <div className="flex items-center gap-2 border-b border-slate-700 pb-2 select-none">
+        <div className="flex items-center gap-2 lg:gap-3 border-b border-slate-700 pb-2 lg:pb-3 select-none">
             {/* MOBILE VIEW: Using CustomDropdown */}
             <div className="md:hidden flex-1">
                 <CustomDropdown
@@ -38,7 +39,7 @@ export default function SearchAndTabs({
             </div>
 
             {/* DESKTOP VIEW: Horizontal Slider (Tabs) */}
-            <div className="hidden md:flex flex-1 gap-1.5 overflow-x-auto py-1 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
+            <div className="hidden md:flex flex-1 gap-1.5 lg:gap-2 overflow-x-auto py-1 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
                 {categories.map((category, index) => {
                     const isSelected = activeCategory === category.id;
                     const dynamicColor =
@@ -49,7 +50,7 @@ export default function SearchAndTabs({
                             key={category.id}
                             type="button"
                             onClick={() => setActiveCategory(category.id)}
-                            className={`px-6 py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all min-w-[110px] shrink-0 whitespace-nowrap text-center border-2 border-transparent shadow ${
+                            className={`px-6 py-3.5 lg:px-8 lg:py-4 xl:px-10 xl:py-5 rounded-xl text-xs lg:text-sm xl:text-base font-black uppercase tracking-wider transition-all min-w-[110px] lg:min-w-[130px] xl:min-w-[150px] shrink-0 whitespace-nowrap text-center border-2 border-transparent shadow ${
                                 isSelected
                                     ? "bg-slate-100 text-slate-950 scale-105 border-yellow-400 font-extrabold shadow-inner"
                                     : dynamicColor
@@ -66,15 +67,15 @@ export default function SearchAndTabs({
                 type="button"
                 disabled={isSyncing}
                 onClick={refreshCatalog}
-                className={`p-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs uppercase tracking-wide flex items-center gap-1 shadow shrink-0 ${
-                    isSyncing ? "animate-pulse opacity-60" : ""
-                }`}
                 title="Sync Database Catalog"
+                className={`px-4 py-3.5 lg:px-5 lg:py-4 xl:py-5 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-slate-950 font-black text-xs lg:text-sm xl:text-base uppercase tracking-wide flex items-center gap-1.5 shadow shrink-0 transition-colors ${
+                    isSyncing ? "opacity-60" : ""
+                }`}
             >
-                🔄{" "}
-                <span className="hidden md:inline">
-                    {isSyncing ? "Syncing..." : "Sync"}
-                </span>
+                <RefreshCw
+                    className={`w-4 h-4 lg:w-5 lg:h-5 ${isSyncing ? "animate-spin" : ""}`}
+                />
+                <span>{isSyncing ? "Syncing..." : "Sync"}</span>
             </button>
         </div>
     );
