@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { Link } from "@inertiajs/react";
 import TerminalPointOfSale from "@/Components/Sales/TerminalPointOfSale";
 import ProductForm from "@/Components/Stock/ProductForm";
 import EditProductForm from "@/Components/Stock/EditProductForm";
@@ -7,7 +8,6 @@ import WasteLogForm from "@/Components/Stock/WasteLogForm";
 import StockCountWorksheet from "@/Components/Stock/StockCountWorksheet";
 import Cashup from "@/Components/Cashup/Cashup";
 import ExpenseManager from "@/Components/Expenses/ExpenseManager";
-import AllTables from "@/Components/Sales/ALLTables";
 
 const NAV_ITEMS = [
     { key: "pos", label: "POS Terminal" },
@@ -18,12 +18,17 @@ const NAV_ITEMS = [
     { key: "stock-count", label: "Stock Count" },
     { key: "cashup", label: "Cashup" },
     { key: "expense", label: "Expenses" },
-    { key: "tables", label: "Tables" },
 ];
 
 export default function ShopManager({ auth }) {
-    const [view, setView] = useState("pos");
-    const [isMenuOpen, setIsMenuOpen] = useState(false); // Toggle state for hamburger menu
+    const [view, setView] = useState(() => {
+        return localStorage.getItem("terminalView") || "pos";
+    });
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+    useEffect(() => {
+        localStorage.setItem("terminalView", view);
+    }, [view]);
 
     return (
         <div className="min-h-screen bg-stone-50">
@@ -38,10 +43,10 @@ export default function ShopManager({ auth }) {
                     </h1>
                 </div>
 
-                {/* Hamburger Button (Visible only on mobile) */}
+                {/* Hamburger */}
                 <button
                     onClick={() => setIsMenuOpen(!isMenuOpen)}
-                    className="sm:hidden p-2 text-white rounded-md hover:bg-[#1b483e]"
+                    className="p-2 text-white rounded-md hover:bg-[#1b483e]"
                 >
                     <svg
                         className="w-6 h-6"
@@ -63,29 +68,41 @@ export default function ShopManager({ auth }) {
                 </button>
             </div>
 
-            {/* Nav: Hamburger Menu Logic */}
-            <div
-                className={`${isMenuOpen ? "block" : "hidden"} sm:block bg-white border-b border-stone-200 shadow-sm sticky top-0 z-50`}
-            >
-                <div className="flex flex-col sm:flex-row gap-2 px-4 py-3 sm:px-6">
+            {/* Collapsible Nav */}
+            {isMenuOpen && (
+                <div className="bg-white p-2 rounded-xl border border-gray-100 shadow-sm flex flex-col gap-1">
                     {NAV_ITEMS.map((item) => (
                         <button
                             key={item.key}
                             onClick={() => {
                                 setView(item.key);
-                                setIsMenuOpen(false); // Close menu on selection
+                                setIsMenuOpen(false);
                             }}
-                            className={`w-full sm:w-auto text-left sm:text-center rounded-lg px-4 py-3 sm:py-2.5 font-medium transition-colors ${
+                            className={`px-4 py-2 text-left rounded-lg hover:bg-gray-50 text-sm font-medium ${
                                 view === item.key
                                     ? "bg-[#14352E] text-white"
-                                    : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                                    : "text-stone-700"
                             }`}
                         >
                             {item.label}
                         </button>
                     ))}
+
+                    {/* Logout */}
+                    <form
+                        method="post"
+                        action={route("logout")}
+                        onSubmit={() => localStorage.removeItem("terminalView")}
+                    >
+                        <button
+                            type="submit"
+                            className="px-4 py-2 text-left rounded-lg hover:bg-gray-50 text-sm font-medium text-red-600"
+                        >
+                            Log Out
+                        </button>
+                    </form>
                 </div>
-            </div>
+            )}
 
             {/* Active view */}
             <div className="p-4 sm:p-6">
@@ -97,7 +114,6 @@ export default function ShopManager({ auth }) {
                 {view === "stock-count" && <StockCountWorksheet />}
                 {view === "cashup" && <Cashup />}
                 {view === "expense" && <ExpenseManager />}
-                {view === "tables" && <AllTables />}
             </div>
         </div>
     );
