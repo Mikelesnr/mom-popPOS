@@ -1,358 +1,1037 @@
-import { Head, Link } from '@inertiajs/react';
+import { useRef, useState } from "react";
+import { Head, Link } from "@inertiajs/react";
+import { useReactToPrint } from "react-to-print";
+import ApplicationLogo from "@/Components/ApplicationLogo";
+import QuickStartGuideContent from "@/Components/documents/QuickStartGuideContent";
+import StaffCheatSheetContent from "@/Components/documents/StaffCheatSheetContent";
 
-export default function Welcome({ auth, laravelVersion, phpVersion }) {
-    const handleImageError = () => {
-        document
-            .getElementById('screenshot-container')
-            ?.classList.add('!hidden');
-        document.getElementById('docs-card')?.classList.add('!row-span-1');
-        document
-            .getElementById('docs-card-content')
-            ?.classList.add('!flex-row');
-        document.getElementById('background')?.classList.add('!hidden');
-    };
+/* ---------- small inline icons (single stroke, no library dependency) ---------- */
+
+const Icon = {
+    Bottle: (p) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            {...p}
+        >
+            <path d="M10 2h4v3.2c0 .6.2 1 .6 1.4L16 8v11.5A2.5 2.5 0 0 1 13.5 22h-3A2.5 2.5 0 0 1 8 19.5V8l1.4-1.4c.4-.4.6-.8.6-1.4V2Z" />
+            <path d="M8.5 12h7" />
+        </svg>
+    ),
+    Scale: (p) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            {...p}
+        >
+            <path d="M12 3v18M7 7l-4 8a4 4 0 0 0 8 0l-4-8ZM17 7l-4 8a4 4 0 0 0 8 0l-4-8Z" />
+            <path d="M5 7h14M9 21h6" />
+        </svg>
+    ),
+    Table: (p) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            {...p}
+        >
+            <path d="M3 8h18M5 8v11M19 8v11M3 8l2-4h14l2 4" />
+        </svg>
+    ),
+    Sync: (p) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            {...p}
+        >
+            <path d="M4 12a8 8 0 0 1 13.7-5.7L20 8M20 4v4h-4" />
+            <path d="M20 12a8 8 0 0 1-13.7 5.7L4 16M4 20v-4h4" />
+        </svg>
+    ),
+    Receipt: (p) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            {...p}
+        >
+            <path d="M6 2h12v19l-2.5-1.5L13 21l-2.5-1.5L8 21l-2-1.5V2Z" />
+            <path d="M9 7h6M9 11h6M9 15h4" />
+        </svg>
+    ),
+    Users: (p) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            {...p}
+        >
+            <circle cx="9" cy="8" r="3.2" />
+            <path d="M2.5 20c.8-3.6 3.3-5.5 6.5-5.5s5.7 1.9 6.5 5.5" />
+            <circle cx="17" cy="8.5" r="2.4" />
+            <path d="M16 14.7c2.6.4 4.3 2.1 4.9 5.3" />
+        </svg>
+    ),
+    Wifi: (p) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            {...p}
+        >
+            <path d="M2 8.5a15.5 15.5 0 0 1 20 0" />
+            <path d="M5.5 12.5a10.5 10.5 0 0 1 13 0" />
+            <path d="M9 16.3a5.6 5.6 0 0 1 6 0" />
+            <circle cx="12" cy="20" r="1" fill="currentColor" stroke="none" />
+        </svg>
+    ),
+    Pin: (p) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            {...p}
+        >
+            <rect x="4" y="3" width="16" height="18" rx="2" />
+            <circle cx="8.5" cy="8" r="1" fill="currentColor" stroke="none" />
+            <circle cx="12" cy="8" r="1" fill="currentColor" stroke="none" />
+            <circle cx="15.5" cy="8" r="1" fill="currentColor" stroke="none" />
+            <path d="M8 13h8M8 16.5h5" />
+        </svg>
+    ),
+    Trash: (p) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            {...p}
+        >
+            <path d="M4 7h16M9 7V4.5h6V7M6 7l1 13.5A1.5 1.5 0 0 0 8.5 22h7a1.5 1.5 0 0 0 1.5-1.5L18 7" />
+            <path d="M10 11v6M14 11v6" />
+        </svg>
+    ),
+    Box: (p) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            {...p}
+        >
+            <path d="M3 8l9-5 9 5-9 5-9-5Z" />
+            <path d="M3 8v8l9 5 9-5V8M12 13v8" />
+        </svg>
+    ),
+    Chevron: (p) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            {...p}
+        >
+            <path d="M7 10l5 5 5-5" />
+        </svg>
+    ),
+    Whatsapp: (p) => (
+        <svg viewBox="0 0 24 24" fill="currentColor" {...p}>
+            <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.87.5 3.63 1.44 5.15L2 22l5.1-1.53a9.86 9.86 0 0 0 4.93 1.34h.01c5.46 0 9.91-4.45 9.91-9.9C21.95 6.45 17.5 2 12.04 2Zm5.86 14.06c-.25.7-1.44 1.34-1.99 1.42-.5.08-1.15.11-1.86-.12-.43-.14-.98-.32-1.68-.63-2.96-1.28-4.9-4.26-5.04-4.46-.15-.2-1.2-1.6-1.2-3.06 0-1.45.76-2.16 1.03-2.46.27-.29.58-.36.77-.36.2 0 .39 0 .56.01.18.01.42-.07.65.5.25.6.85 2.07.92 2.22.07.15.12.32.02.52-.1.2-.15.32-.3.5-.15.17-.31.39-.44.52-.15.15-.3.31-.13.6.17.3.76 1.26 1.64 2.04 1.13 1 2.08 1.32 2.38 1.47.3.15.47.13.65-.08.17-.2.74-.86.94-1.16.2-.3.4-.24.66-.15.27.1 1.72.81 2.02.96.3.15.5.22.57.34.08.13.08.72-.17 1.43Z" />
+        </svg>
+    ),
+};
+
+/* A loose hand-painted brush stroke, echoing the mark under "POS" in the logo. */
+function BrushUnderline({ className = "", color = "#D8392A" }) {
+    return (
+        <svg
+            viewBox="0 0 220 20"
+            className={className}
+            preserveAspectRatio="none"
+            aria-hidden="true"
+        >
+            <path
+                d="M3 12c22-8 55-9 84-6 33 3.5 68 4 130-2-30 11-70 13-110 11-30-1.5-60-4-107 3Z"
+                fill={color}
+            />
+        </svg>
+    );
+}
+
+/* ---------- reusable pieces ---------- */
+
+function SectionEyebrow({ children, tone = "ink" }) {
+    const toneClass = tone === "cream" ? "text-[#CFE3D3]" : "text-[#1C7A46]";
+    return (
+        <p
+            className={`font-mono text-[11px] tracking-[0.25em] uppercase ${toneClass} mb-3`}
+        >
+            {children}
+        </p>
+    );
+}
+
+function FeatureCard({ icon: IconEl, title, children }) {
+    return (
+        <div className="rounded-md border border-[#E8DFCB] bg-white p-6 hover:border-[#D8392A]/50 hover:shadow-sm transition-all">
+            <IconEl className="w-7 h-7 text-[#D8392A] mb-4" />
+            <h3 className="font-serif text-lg text-[#241C15] mb-2">{title}</h3>
+            <p className="text-sm text-[#5C5346] leading-relaxed">{children}</p>
+        </div>
+    );
+}
+
+function AccordionItem({ q, a, isOpen, onClick }) {
+    return (
+        <div className="border-b border-[#E8DFCB]">
+            <button
+                onClick={onClick}
+                className="w-full flex items-center justify-between gap-4 py-5 text-left group"
+                aria-expanded={isOpen}
+            >
+                <span className="font-serif text-base sm:text-lg text-[#241C15] group-hover:text-[#D8392A] transition-colors">
+                    {q}
+                </span>
+                <Icon.Chevron
+                    className={`w-5 h-5 shrink-0 text-[#1C7A46] transition-transform duration-200 ${
+                        isOpen ? "rotate-180" : ""
+                    }`}
+                />
+            </button>
+            <div
+                className={`grid transition-all duration-200 ease-out ${
+                    isOpen
+                        ? "grid-rows-[1fr] opacity-100 pb-5"
+                        : "grid-rows-[0fr] opacity-0"
+                }`}
+                style={{ display: "grid" }}
+            >
+                <div className="overflow-hidden">
+                    <p className="text-sm text-[#5C5346] leading-relaxed max-w-2xl">
+                        {a}
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/* ---------- documentation content, split by shop type ---------- */
+
+const docsCommon = [
+    {
+        q: "How do I get started?",
+        a: "Sign up and you'll get an Owner account. Use it once to create your shop and a shop manager account, then log in as the shop manager for everyday use. Your Owner login stays in reserve for account-level changes.",
+    },
+    {
+        q: "What can each type of account do?",
+        a: 'Owner sets up the business and handles account-level settings. Shop Manager runs a shop day to day and can create staff. Manager handles products, stock and the sales floor. Staff rings up sales and takes payment. "Manager" throughout this page includes Shop Manager.',
+    },
+];
+
+const docsShopType = {
+    shop: [
+        {
+            q: "What do I choose when creating my shop?",
+            a: "Select 'Shop' when creating your business. This keeps things simple: every product is tracked in plain units — no bottles, no shots, no alcohol-specific setup at all.",
+        },
+        {
+            q: "How does stock work for a normal shop?",
+            a: "Single items are tracked one at a time. Multipacks — a six-pack of drinks, say — open automatically into individual units the moment they're sold. Anything you buy in bulk, like a case of 24, is set up that way from the start so your counts match how you actually buy.",
+        },
+    ],
+    bar: [
+        {
+            q: "What's a shot size, and when do I set it?",
+            a: "Choose 'Bar' or 'Resto-Bar' when you create your shop, and you'll set your shop's standard shot size right there — for example 25ml. Every bottle product in that shop uses this automatically, so you only set it once.",
+        },
+        {
+            q: "How does the bottle counter actually work?",
+            a: "By weight, not estimation. When you create a bottle product, you enter its empty weight, its full weight, and its capacity. From then on, Mom & Pop POS can work out exactly how many shots are left in that bottle — even mid-pour — just from what it weighs.",
+        },
+        {
+            q: "What about six-packs, cases, and non-alcoholic stock?",
+            a: "Bars and resto-bars still get everything a normal shop does. Single items track one at a time, multipacks open automatically when sold, and bulk buys like a case of 24 are set up once when you create the product.",
+        },
+    ],
+};
+
+const docsTail = [
+    {
+        q: "Fast sale or table — which do I use?",
+        a: "Fast Sale is for a quick transaction at the counter. A Table stays open for guests who are sticking around, and can be moved between staff, voided, or deferred by a manager.",
+    },
+    {
+        q: "What happens with a walk-out?",
+        a: "A manager defers the table instead of leaving it open indefinitely. Deferred tables are kept on record, show up at cash-up, and can be printed to PDF.",
+    },
+    {
+        q: "Why does every device need to sync before cash-up?",
+        a: "Cash-up totals what's been synced. If a device hasn't pressed Sync in the POS, its sales won't be counted — so every device syncs first, every time.",
+    },
+    {
+        q: "What does a cash-up report actually show me?",
+        a: "An itemised total per payment method, individual staff payouts you can print to PDF, the day's expenses, and any wasted stock or voided/deferred tables. Nothing is silently removed — it's all part of the record.",
+    },
+    {
+        q: "Can I look back at old cash-ups?",
+        a: "Yes. Every cash-up is saved to your shop's history and can be reopened or reprinted whenever you need it.",
+    },
+];
+
+export default function Welcome({ auth }) {
+    const [openDoc, setOpenDoc] = useState(0);
+    const [mobileOpen, setMobileOpen] = useState(false);
+    const [shopType, setShopType] = useState("bar"); // 'shop' | 'bar'
+
+    const quickStartRef = useRef(null);
+    const staffSheetRef = useRef(null);
+
+    const printQuickStart = useReactToPrint({
+        contentRef: quickStartRef,
+        documentTitle: "mom-and-pop-pos-quick-start-guide",
+    });
+
+    const printStaffSheet = useReactToPrint({
+        contentRef: staffSheetRef,
+        documentTitle: "mom-and-pop-pos-staff-cheat-sheet",
+    });
+
+    const navLinks = [
+        ["How it works", "#how-it-works"],
+        ["Features", "#features"],
+        ["For bars & restaurants", "#for-bars"],
+        ["Docs", "#docs"],
+        ["Contact", "#contact"],
+    ];
+
+    const activeDocs = [...docsCommon, ...docsShopType[shopType], ...docsTail];
 
     return (
         <>
-            <Head title="Welcome" />
-            <div className="bg-gray-50 text-black/50 dark:bg-black dark:text-white/50">
-                <img
-                    id="background"
-                    className="absolute -left-20 top-0 max-w-[877px]"
-                    src="https://laravel.com/assets/img/welcome/background.svg"
+            <Head title="Mom & Pop POS — Point of sale built for how you actually run your shop">
+                <link rel="preconnect" href="https://fonts.googleapis.com" />
+                <link
+                    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+                    rel="stylesheet"
                 />
-                <div className="relative flex min-h-screen flex-col items-center justify-center selection:bg-[#FF2D20] selection:text-white">
-                    <div className="relative w-full max-w-2xl px-6 lg:max-w-7xl">
-                        <header className="grid grid-cols-2 items-center gap-2 py-10 lg:grid-cols-3">
-                            <div className="flex lg:col-start-2 lg:justify-center">
-                                <svg
-                                    className="h-12 w-auto text-white lg:h-16 lg:text-[#FF2D20]"
-                                    viewBox="0 0 62 65"
-                                    fill="none"
-                                    xmlns="http://www.w3.org/2000/svg"
+            </Head>
+
+            <style>{`
+                :root {
+                    --cream: #FFFCF5;
+                    --ink: #241C15;
+                    --red: #D8392A;
+                    --green: #1C7A46;
+                    --green-deep: #123D26;
+                    --blue: #2B6CA3;
+                    --gold: #E4A23A;
+                    --line: #E8DFCB;
+                }
+                .font-serif { font-family: 'Fraunces', Georgia, serif; }
+                .font-sans { font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif; }
+                .font-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+                @keyframes riseIn {
+                    from { opacity: 0; transform: translateY(14px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                .rise-in { animation: riseIn 0.7s cubic-bezier(.2,.7,.2,1) both; }
+                @media (prefers-reduced-motion: reduce) {
+                    .rise-in { animation: none; }
+                }
+            `}</style>
+
+            <div className="font-sans bg-[#FFFCF5] text-[#241C15] antialiased">
+                {/* ---------------- NAV ---------------- */}
+                <header className="sticky top-0 z-50 border-b border-[#E8DFCB] bg-[#FFFCF5]/95 backdrop-blur">
+                    <div className="max-w-6xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <ApplicationLogo className="h-10 w-auto" />
+                        </div>
+
+                        <nav className="hidden md:flex items-center gap-8">
+                            {navLinks.map(([label, href]) => (
+                                <a
+                                    key={href}
+                                    href={href}
+                                    className="text-sm text-[#5C5346] hover:text-[#D8392A] transition-colors"
                                 >
-                                    <path
-                                        d="M61.8548 14.6253C61.8778 14.7102 61.8895 14.7978 61.8897 14.8858V28.5615C61.8898 28.737 61.8434 28.9095 61.7554 29.0614C61.6675 29.2132 61.5409 29.3392 61.3887 29.4265L49.9104 36.0351V49.1337C49.9104 49.4902 49.7209 49.8192 49.4118 49.9987L25.4519 63.7916C25.3971 63.8227 25.3372 63.8427 25.2774 63.8639C25.255 63.8714 25.2338 63.8851 25.2101 63.8913C25.0426 63.9354 24.8666 63.9354 24.6991 63.8913C24.6716 63.8838 24.6467 63.8689 24.6205 63.8589C24.5657 63.8389 24.5084 63.8215 24.456 63.7916L0.501061 49.9987C0.348882 49.9113 0.222437 49.7853 0.134469 49.6334C0.0465019 49.4816 0.000120578 49.3092 0 49.1337L0 8.10652C0 8.01678 0.0124642 7.92953 0.0348998 7.84477C0.0423783 7.8161 0.0598282 7.78993 0.0697995 7.76126C0.0884958 7.70891 0.105946 7.65531 0.133367 7.6067C0.152063 7.5743 0.179485 7.54812 0.20192 7.51821C0.230588 7.47832 0.256763 7.43719 0.290416 7.40229C0.319084 7.37362 0.356476 7.35243 0.388883 7.32751C0.425029 7.29759 0.457436 7.26518 0.498568 7.2415L12.4779 0.345059C12.6296 0.257786 12.8015 0.211853 12.9765 0.211853C13.1515 0.211853 13.3234 0.257786 13.475 0.345059L25.4531 7.2415H25.4556C25.4955 7.26643 25.5292 7.29759 25.5653 7.32626C25.5977 7.35119 25.6339 7.37362 25.6625 7.40104C25.6974 7.43719 25.7224 7.47832 25.7523 7.51821C25.7735 7.54812 25.8021 7.5743 25.8196 7.6067C25.8483 7.65656 25.8645 7.70891 25.8844 7.76126C25.8944 7.78993 25.9118 7.8161 25.9193 7.84602C25.9423 7.93096 25.954 8.01853 25.9542 8.10652V33.7317L35.9355 27.9844V14.8846C35.9355 14.7973 35.948 14.7088 35.9704 14.6253C35.9792 14.5954 35.9954 14.5692 36.0053 14.5405C36.0253 14.4882 36.0427 14.4346 36.0702 14.386C36.0888 14.3536 36.1163 14.3274 36.1375 14.2975C36.1674 14.2576 36.1923 14.2165 36.2272 14.1816C36.2559 14.1529 36.292 14.1317 36.3244 14.1068C36.3618 14.0769 36.3942 14.0445 36.4341 14.0208L48.4147 7.12434C48.5663 7.03694 48.7383 6.99094 48.9133 6.99094C49.0883 6.99094 49.2602 7.03694 49.4118 7.12434L61.3899 14.0208C61.4323 14.0457 61.4647 14.0769 61.5021 14.1055C61.5333 14.1305 61.5694 14.1529 61.5981 14.1803C61.633 14.2165 61.6579 14.2576 61.6878 14.2975C61.7103 14.3274 61.7377 14.3536 61.7551 14.386C61.7838 14.4346 61.8 14.4882 61.8199 14.5405C61.8312 14.5692 61.8474 14.5954 61.8548 14.6253ZM59.893 27.9844V16.6121L55.7013 19.0252L49.9104 22.3593V33.7317L59.8942 27.9844H59.893ZM47.9149 48.5566V37.1768L42.2187 40.4299L25.953 49.7133V61.2003L47.9149 48.5566ZM1.99677 9.83281V48.5566L23.9562 61.199V49.7145L12.4841 43.2219L12.4804 43.2194L12.4754 43.2169C12.4368 43.1945 12.4044 43.1621 12.3682 43.1347C12.3371 43.1097 12.3009 43.0898 12.2735 43.0624L12.271 43.0586C12.2386 43.0275 12.2162 42.9888 12.1887 42.9539C12.1638 42.9203 12.1339 42.8916 12.114 42.8567L12.1127 42.853C12.0903 42.8156 12.0766 42.7707 12.0604 42.7283C12.0442 42.6909 12.023 42.656 12.013 42.6161C12.0005 42.5688 11.998 42.5177 11.9931 42.4691C11.9881 42.4317 11.9781 42.3943 11.9781 42.3569V15.5801L6.18848 12.2446L1.99677 9.83281ZM12.9777 2.36177L2.99764 8.10652L12.9752 13.8513L22.9541 8.10527L12.9752 2.36177H12.9777ZM18.1678 38.2138L23.9574 34.8809V9.83281L19.7657 12.2459L13.9749 15.5801V40.6281L18.1678 38.2138ZM48.9133 9.14105L38.9344 14.8858L48.9133 20.6305L58.8909 14.8846L48.9133 9.14105ZM47.9149 22.3593L42.124 19.0252L37.9323 16.6121V27.9844L43.7219 31.3174L47.9149 33.7317V22.3593ZM24.9533 47.987L39.59 39.631L46.9065 35.4555L36.9352 29.7145L25.4544 36.3242L14.9907 42.3482L24.9533 47.987Z"
-                                        fill="currentColor"
-                                    />
-                                </svg>
-                            </div>
-                            <nav className="-mx-3 flex flex-1 justify-end">
-                                {auth.user ? (
+                                    {label}
+                                </a>
+                            ))}
+                        </nav>
+
+                        <div className="hidden md:flex items-center gap-3">
+                            {auth?.user ? (
+                                <Link
+                                    href={route("dashboard")}
+                                    className="text-sm px-4 py-2 rounded-md bg-[#D8392A] text-white font-medium hover:bg-[#c02f21] transition-colors"
+                                >
+                                    Dashboard
+                                </Link>
+                            ) : (
+                                <>
                                     <Link
-                                        href={route('dashboard')}
-                                        className="rounded-md px-3 py-2 text-black ring-1 ring-transparent transition hover:text-black/70 focus:outline-none focus-visible:ring-[#FF2D20] dark:text-white dark:hover:text-white/80 dark:focus-visible:ring-white"
+                                        href={route("login")}
+                                        className="text-sm text-[#5C5346] hover:text-[#241C15] transition-colors"
+                                    >
+                                        Log in
+                                    </Link>
+                                    <Link
+                                        href={route("register")}
+                                        className="text-sm px-4 py-2 rounded-md bg-[#D8392A] text-white font-medium hover:bg-[#c02f21] transition-colors"
+                                    >
+                                        Create your account
+                                    </Link>
+                                </>
+                            )}
+                        </div>
+
+                        <button
+                            className="md:hidden text-[#241C15]"
+                            onClick={() => setMobileOpen((v) => !v)}
+                            aria-label="Toggle menu"
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                className="w-6 h-6"
+                            >
+                                {mobileOpen ? (
+                                    <path d="M6 6l12 12M18 6L6 18" />
+                                ) : (
+                                    <path d="M4 7h16M4 12h16M4 17h16" />
+                                )}
+                            </svg>
+                        </button>
+                    </div>
+
+                    {mobileOpen && (
+                        <div className="md:hidden border-t border-[#E8DFCB] px-5 py-4 space-y-4">
+                            {navLinks.map(([label, href]) => (
+                                <a
+                                    key={href}
+                                    href={href}
+                                    onClick={() => setMobileOpen(false)}
+                                    className="block text-sm text-[#5C5346]"
+                                >
+                                    {label}
+                                </a>
+                            ))}
+                            <div className="flex gap-3 pt-2">
+                                {auth?.user ? (
+                                    <Link
+                                        href={route("dashboard")}
+                                        className="text-sm px-4 py-2 rounded-md bg-[#D8392A] text-white font-medium"
                                     >
                                         Dashboard
                                     </Link>
                                 ) : (
                                     <>
                                         <Link
-                                            href={route('login')}
-                                            className="rounded-md px-3 py-2 text-black ring-1 ring-transparent transition hover:text-black/70 focus:outline-none focus-visible:ring-[#FF2D20] dark:text-white dark:hover:text-white/80 dark:focus-visible:ring-white"
+                                            href={route("login")}
+                                            className="text-sm text-[#5C5346]"
                                         >
                                             Log in
                                         </Link>
                                         <Link
-                                            href={route('register')}
-                                            className="rounded-md px-3 py-2 text-black ring-1 ring-transparent transition hover:text-black/70 focus:outline-none focus-visible:ring-[#FF2D20] dark:text-white dark:hover:text-white/80 dark:focus-visible:ring-white"
+                                            href={route("register")}
+                                            className="text-sm px-4 py-2 rounded-md bg-[#D8392A] text-white font-medium"
                                         >
-                                            Register
+                                            Create your account
                                         </Link>
                                     </>
                                 )}
-                            </nav>
-                        </header>
+                            </div>
+                        </div>
+                    )}
+                </header>
 
-                        <main className="mt-6">
-                            <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
-                                <a
-                                    href="https://laravel.com/docs"
-                                    id="docs-card"
-                                    className="flex flex-col items-start gap-6 overflow-hidden rounded-lg bg-white p-6 shadow-[0px_14px_34px_0px_rgba(0,0,0,0.08)] ring-1 ring-white/[0.05] transition duration-300 hover:text-black/70 hover:ring-black/20 focus:outline-none focus-visible:ring-[#FF2D20] md:row-span-3 lg:p-10 lg:pb-10 dark:bg-zinc-900 dark:ring-zinc-800 dark:hover:text-white/70 dark:hover:ring-zinc-700 dark:focus-visible:ring-[#FF2D20]"
-                                >
-                                    <div
-                                        id="screenshot-container"
-                                        className="relative flex w-full flex-1 items-stretch"
-                                    >
-                                        <img
-                                            src="https://laravel.com/assets/img/welcome/docs-light.svg"
-                                            alt="Laravel documentation screenshot"
-                                            className="aspect-video h-full w-full flex-1 rounded-[10px] object-cover object-top drop-shadow-[0px_4px_34px_rgba(0,0,0,0.06)] dark:hidden"
-                                            onError={handleImageError}
-                                        />
-                                        <img
-                                            src="https://laravel.com/assets/img/welcome/docs-dark.svg"
-                                            alt="Laravel documentation screenshot"
-                                            className="hidden aspect-video h-full w-full flex-1 rounded-[10px] object-cover object-top drop-shadow-[0px_4px_34px_rgba(0,0,0,0.25)] dark:block"
-                                        />
-                                        <div className="absolute -bottom-16 -left-16 h-40 w-[calc(100%+8rem)] bg-gradient-to-b from-transparent via-white to-white dark:via-zinc-900 dark:to-zinc-900"></div>
-                                    </div>
+                {/* ---------------- HERO ---------------- */}
+                <section className="max-w-6xl mx-auto px-5 sm:px-8 pt-16 pb-20 sm:pt-24 sm:pb-28 grid lg:grid-cols-2 gap-14 items-center">
+                    <div className="rise-in">
+                        <p className="font-mono text-xs tracking-[0.25em] uppercase text-[#1C7A46] mb-5">
+                            Point of sale, built for the till
+                        </p>
+                        <h1 className="font-serif text-4xl sm:text-5xl lg:text-[3.4rem] leading-[1.08] mb-3 text-[#241C15]">
+                            Sales don't stop
+                            <br />
+                            when the signal does.
+                        </h1>
+                        <BrushUnderline
+                            className="w-40 h-4 mb-6"
+                            color="#E4A23A"
+                        />
+                        <p className="text-lg text-[#5C5346] leading-relaxed mb-9 max-w-lg">
+                            Mom & Pop POS keeps your shop, bar or restaurant
+                            running — ring up sales, track stock accurately, and
+                            reconcile cash-up at the end of the day, even when
+                            the network drops.
+                        </p>
+                        <div className="flex flex-wrap gap-4">
+                            <Link
+                                href={route("register")}
+                                className="px-6 py-3 rounded-md bg-[#D8392A] text-white font-medium hover:bg-[#c02f21] transition-colors"
+                            >
+                                Create your account
+                            </Link>
+                            <a
+                                href="#how-it-works"
+                                className="px-6 py-3 rounded-md border border-[#E8DFCB] text-[#241C15] hover:border-[#D8392A] transition-colors"
+                            >
+                                See how it works
+                            </a>
+                        </div>
+                        <p className="mt-6 text-xs text-[#8A8070] font-mono">
+                            Currently built for businesses in Zimbabwe.
+                        </p>
+                    </div>
 
-                                    <div className="relative flex items-center gap-6 lg:items-end">
-                                        <div
-                                            id="docs-card-content"
-                                            className="flex items-start gap-6 lg:flex-col"
-                                        >
-                                            <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#FF2D20]/10 sm:size-16">
-                                                <svg
-                                                    className="size-5 sm:size-6"
-                                                    xmlns="http://www.w3.org/2000/svg"
-                                                    fill="none"
-                                                    viewBox="0 0 24 24"
-                                                >
-                                                    <path
-                                                        fill="#FF2D20"
-                                                        d="M23 4a1 1 0 0 0-1.447-.894L12.224 7.77a.5.5 0 0 1-.448 0L2.447 3.106A1 1 0 0 0 1 4v13.382a1.99 1.99 0 0 0 1.105 1.79l9.448 4.728c.14.065.293.1.447.1.154-.005.306-.04.447-.105l9.453-4.724a1.99 1.99 0 0 0 1.1-1.789V4ZM3 6.023a.25.25 0 0 1 .362-.223l7.5 3.75a.251.251 0 0 1 .138.223v11.2a.25.25 0 0 1-.362.224l-7.5-3.75a.25.25 0 0 1-.138-.22V6.023Zm18 11.2a.25.25 0 0 1-.138.224l-7.5 3.75a.249.249 0 0 1-.329-.099.249.249 0 0 1-.033-.12V9.772a.251.251 0 0 1 .138-.224l7.5-3.75a.25.25 0 0 1 .362.224v11.2Z"
-                                                    />
-                                                    <path
-                                                        fill="#FF2D20"
-                                                        d="m3.55 1.893 8 4.048a1.008 1.008 0 0 0 .9 0l8-4.048a1 1 0 0 0-.9-1.785l-7.322 3.706a.506.506 0 0 1-.452 0L4.454.108a1 1 0 0 0-.9 1.785H3.55Z"
-                                                    />
-                                                </svg>
-                                            </div>
+                    {/* signature receipt visual */}
+                    <div
+                        className="rise-in flex justify-center lg:justify-end"
+                        style={{ animationDelay: "0.15s" }}
+                    >
+                        <div className="w-[300px] sm:w-[340px] bg-white border border-[#E8DFCB] rounded-md shadow-xl shadow-black/5 -rotate-2 p-6 font-mono text-[12px] leading-relaxed">
+                            <p className="text-center font-serif font-semibold text-base tracking-wide mb-1 text-[#D8392A]">
+                                MOM & POP POS
+                            </p>
+                            <p className="text-center text-[10px] text-[#8A8070] mb-4">
+                                COUNTER SALE · #0042
+                            </p>
+                            <div className="border-t border-dashed border-[#E8DFCB] my-2" />
+                            <div className="flex justify-between text-[#241C15]">
+                                <span>Castle Lite 340ml ×4</span>
+                                <span>$6.00</span>
+                            </div>
+                            <div className="flex justify-between text-[#241C15]">
+                                <span>Chicken Wings ×1</span>
+                                <span>$5.50</span>
+                            </div>
+                            <div className="mt-2 mb-1 text-[#2B6CA3]">
+                                Jack Daniels 750ml
+                            </div>
+                            <div className="flex justify-between text-[#2B6CA3] text-[11px]">
+                                <span>
+                                    &nbsp;&nbsp;→ weighed: 29 shots left
+                                </span>
+                            </div>
+                            <div className="border-t border-dashed border-[#E8DFCB] my-3" />
+                            <div className="flex items-center gap-2 text-[#1C7A46] text-[11px] mb-3">
+                                <Icon.Sync className="w-3.5 h-3.5" />
+                                <span>SYNCED FROM 3 DEVICES</span>
+                            </div>
+                            <div className="flex justify-between text-[#241C15]">
+                                <span>Cash</span>
+                                <span>$8.00</span>
+                            </div>
+                            <div className="flex justify-between text-[#241C15]">
+                                <span>EcoCash</span>
+                                <span>$3.50</span>
+                            </div>
+                            <div className="border-t border-[#241C15]/20 mt-3 pt-2 flex justify-between font-semibold text-sm text-[#241C15]">
+                                <span>TOTAL</span>
+                                <span>$11.50</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
 
-                                            <div className="pt-3 sm:pt-5 lg:pt-0">
-                                                <h2 className="text-xl font-semibold text-black dark:text-white">
-                                                    Documentation
-                                                </h2>
+                {/* ---------------- HOW IT WORKS ---------------- */}
+                <section
+                    id="how-it-works"
+                    className="bg-[#123D26] text-[#FFFCF5]"
+                >
+                    <div className="max-w-6xl mx-auto px-5 sm:px-8 py-20">
+                        <SectionEyebrow tone="cream">
+                            Getting set up
+                        </SectionEyebrow>
+                        <h2 className="font-serif text-3xl sm:text-4xl mb-14 max-w-xl">
+                            Five steps, and every till after this is a PIN away.
+                        </h2>
 
-                                                <p className="mt-4 text-sm/relaxed">
-                                                    Laravel has wonderful
-                                                    documentation covering every
-                                                    aspect of the framework.
-                                                    Whether you are a newcomer
-                                                    or have prior experience
-                                                    with Laravel, we recommend
-                                                    reading our documentation
-                                                    from beginning to end.
-                                                </p>
-                                            </div>
-                                        </div>
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-6">
+                            {[
+                                [
+                                    "01",
+                                    "Create your account",
+                                    "Sign up with your email and get an Owner account — your master key, not your everyday login.",
+                                ],
+                                [
+                                    "02",
+                                    "Add your shop",
+                                    "Name your business and choose its type — Shop, Bar, or Resto-Bar. Bar and Resto-Bar are where you set your shop's shot size.",
+                                ],
+                                [
+                                    "03",
+                                    "Create a shop manager",
+                                    "Set up the account that will run the floor day to day.",
+                                ],
+                                [
+                                    "04",
+                                    "Switch accounts",
+                                    "Log out of Owner, log in as shop manager. Owner stays safely in reserve.",
+                                ],
+                                [
+                                    "05",
+                                    "Pair the till",
+                                    "First login needs a password. After that, unlock with a 4-digit PIN.",
+                                ],
+                            ].map(([n, t, d]) => (
+                                <div key={n}>
+                                    <p className="font-mono text-[#E4A23A] text-sm mb-3">
+                                        {n}
+                                    </p>
+                                    <h3 className="font-serif text-lg mb-2">
+                                        {t}
+                                    </h3>
+                                    <p className="text-sm text-[#CFE3D3] leading-relaxed">
+                                        {d}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
 
-                                        <svg
-                                            className="size-6 shrink-0 stroke-[#FF2D20]"
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            strokeWidth="1.5"
-                                        >
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75"
-                                            />
-                                        </svg>
-                                    </div>
-                                </a>
+                {/* ---------------- ROLES ---------------- */}
+                <section className="max-w-6xl mx-auto px-5 sm:px-8 py-20">
+                    <SectionEyebrow>Accounts</SectionEyebrow>
+                    <h2 className="font-serif text-3xl sm:text-4xl mb-12 max-w-xl">
+                        Everyone gets exactly the access they need.
+                    </h2>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                        {[
+                            [
+                                "Owner",
+                                "You. Full control, including billing and shop setup. For setup, not for working the till.",
+                            ],
+                            [
+                                "Shop Manager",
+                                "Runs the shop day to day. Creates staff and manager accounts, manages stock, opens cash-up.",
+                            ],
+                            [
+                                "Manager",
+                                "Handles products, stock and the sales floor for daily operations.",
+                            ],
+                            [
+                                "Staff",
+                                "Rings up sales, opens tables, takes payment. Nothing more, nothing less.",
+                            ],
+                        ].map(([title, desc]) => (
+                            <div
+                                key={title}
+                                className="border border-[#E8DFCB] rounded-md p-6 bg-white"
+                            >
+                                <Icon.Users className="w-6 h-6 text-[#2B6CA3] mb-4" />
+                                <h3 className="font-serif text-lg mb-2">
+                                    {title}
+                                </h3>
+                                <p className="text-sm text-[#5C5346] leading-relaxed">
+                                    {desc}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                </section>
 
-                                <a
-                                    href="https://laracasts.com"
-                                    className="flex items-start gap-4 rounded-lg bg-white p-6 shadow-[0px_14px_34px_0px_rgba(0,0,0,0.08)] ring-1 ring-white/[0.05] transition duration-300 hover:text-black/70 hover:ring-black/20 focus:outline-none focus-visible:ring-[#FF2D20] lg:pb-10 dark:bg-zinc-900 dark:ring-zinc-800 dark:hover:text-white/70 dark:hover:ring-zinc-700 dark:focus-visible:ring-[#FF2D20]"
-                                >
-                                    <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#FF2D20]/10 sm:size-16">
-                                        <svg
-                                            className="size-5 sm:size-6"
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                        >
-                                            <g fill="#FF2D20">
-                                                <path d="M24 8.25a.5.5 0 0 0-.5-.5H.5a.5.5 0 0 0-.5.5v12a2.5 2.5 0 0 0 2.5 2.5h19a2.5 2.5 0 0 0 2.5-2.5v-12Zm-7.765 5.868a1.221 1.221 0 0 1 0 2.264l-6.626 2.776A1.153 1.153 0 0 1 8 18.123v-5.746a1.151 1.151 0 0 1 1.609-1.035l6.626 2.776ZM19.564 1.677a.25.25 0 0 0-.177-.427H15.6a.106.106 0 0 0-.072.03l-4.54 4.543a.25.25 0 0 0 .177.427h3.783c.027 0 .054-.01.073-.03l4.543-4.543ZM22.071 1.318a.047.047 0 0 0-.045.013l-4.492 4.492a.249.249 0 0 0 .038.385.25.25 0 0 0 .14.042h5.784a.5.5 0 0 0 .5-.5v-2a2.5 2.5 0 0 0-1.925-2.432ZM13.014 1.677a.25.25 0 0 0-.178-.427H9.101a.106.106 0 0 0-.073.03l-4.54 4.543a.25.25 0 0 0 .177.427H8.4a.106.106 0 0 0 .073-.03l4.54-4.543ZM6.513 1.677a.25.25 0 0 0-.177-.427H2.5A2.5 2.5 0 0 0 0 3.75v2a.5.5 0 0 0 .5.5h1.4a.106.106 0 0 0 .073-.03l4.54-4.543Z" />
-                                            </g>
-                                        </svg>
-                                    </div>
+                {/* ---------------- FEATURES ---------------- */}
+                <section
+                    id="features"
+                    className="border-t border-b border-[#E8DFCB] bg-[#F5F1E4]"
+                >
+                    <div className="max-w-6xl mx-auto px-5 sm:px-8 py-20">
+                        <SectionEyebrow>What it does</SectionEyebrow>
+                        <h2 className="font-serif text-3xl sm:text-4xl mb-12 max-w-xl">
+                            Everything from a fast counter sale to the last
+                            dollar at cash-up.
+                        </h2>
 
-                                    <div className="pt-3 sm:pt-5">
-                                        <h2 className="text-xl font-semibold text-black dark:text-white">
-                                            Laracasts
-                                        </h2>
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                            <FeatureCard
+                                icon={Icon.Wifi}
+                                title="Works without the internet"
+                            >
+                                Sales are recorded on the device the moment they
+                                happen. When the network comes back, everything
+                                syncs — no lost sales, no waiting on a signal to
+                                serve a customer.
+                            </FeatureCard>
+                            <FeatureCard
+                                icon={Icon.Table}
+                                title="Fast sales and tables"
+                            >
+                                Ring up a quick counter sale, or open a table
+                                for guests staying a while. Managers can move a
+                                table between staff, void it, or defer it for a
+                                walk-out.
+                            </FeatureCard>
+                            <FeatureCard
+                                icon={Icon.Sync}
+                                title="Sync before cash-up"
+                            >
+                                Every device pushes its sales in with one tap,
+                                so cash-up always reflects the full day across
+                                every till in the building.
+                            </FeatureCard>
+                            <FeatureCard
+                                icon={Icon.Receipt}
+                                title="Itemised cash-up"
+                            >
+                                A clear breakdown by payment method, printable
+                                staff payouts, and the day's expenses — all in
+                                one report at close.
+                            </FeatureCard>
+                            <FeatureCard
+                                icon={Icon.Trash}
+                                title="Nothing goes missing quietly"
+                            >
+                                Wasted stock, voided sales and deferred tables
+                                all show up on the record at cash-up —
+                                soft-deleted, never erased.
+                            </FeatureCard>
+                            <FeatureCard
+                                icon={Icon.Pin}
+                                title="PIN login on paired devices"
+                            >
+                                Pair a device once with a password. After that,
+                                staff unlock it with a short PIN — quick enough
+                                for a busy bar.
+                            </FeatureCard>
+                        </div>
+                    </div>
+                </section>
 
-                                        <p className="mt-4 text-sm/relaxed">
-                                            Laracasts offers thousands of video
-                                            tutorials on Laravel, PHP, and
-                                            JavaScript development. Check them
-                                            out, see for yourself, and massively
-                                            level up your development skills in
-                                            the process.
-                                        </p>
-                                    </div>
+                {/* ---------------- FOR BARS ---------------- */}
+                <section
+                    id="for-bars"
+                    className="max-w-6xl mx-auto px-5 sm:px-8 py-20"
+                >
+                    <SectionEyebrow>Two kinds of shop</SectionEyebrow>
+                    <h2 className="font-serif text-3xl sm:text-4xl mb-6 max-w-lg">
+                        Set up once for how you actually sell.
+                    </h2>
+                    <p className="text-[#5C5346] leading-relaxed mb-14 max-w-2xl">
+                        When you create your shop, you choose its type. A plain{" "}
+                        <strong className="text-[#241C15]">Shop</strong> keeps
+                        everything in simple units — no bottles, no alcohol
+                        setup. A <strong className="text-[#241C15]">Bar</strong>{" "}
+                        or <strong className="text-[#241C15]">Resto-Bar</strong>{" "}
+                        unlocks bottle stock, and that's also where you set your
+                        shop's standard shot size, used automatically across
+                        every bottle you stock.
+                    </p>
 
-                                    <svg
-                                        className="size-6 shrink-0 self-center stroke-[#FF2D20]"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        strokeWidth="1.5"
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75"
-                                        />
-                                    </svg>
-                                </a>
+                    <div className="grid lg:grid-cols-2 gap-14 items-start">
+                        <div>
+                            <div className="flex items-center gap-2 mb-4">
+                                <Icon.Scale className="w-6 h-6 text-[#D8392A]" />
+                                <h3 className="font-serif text-2xl text-[#241C15]">
+                                    Weighed, not guessed
+                                </h3>
+                            </div>
+                            <p className="text-[#5C5346] leading-relaxed mb-4 max-w-lg">
+                                Bar and Resto-Bar stock is counted by weight —
+                                tested for accuracy, not estimated. When you
+                                create a bottle product, you enter three numbers
+                                once: the bottle's{" "}
+                                <strong className="text-[#241C15]">
+                                    empty weight
+                                </strong>
+                                , its{" "}
+                                <strong className="text-[#241C15]">
+                                    full weight
+                                </strong>
+                                , and its{" "}
+                                <strong className="text-[#241C15]">
+                                    capacity
+                                </strong>
+                                .
+                            </p>
+                            <p className="text-[#5C5346] leading-relaxed max-w-lg">
+                                Combined with the shot size you set for your
+                                shop, Mom & Pop POS works out exactly how many
+                                shots are left in any bottle — even one that's
+                                already open and half poured — just from what it
+                                weighs.
+                            </p>
+                        </div>
 
-                                <a
-                                    href="https://laravel-news.com"
-                                    className="flex items-start gap-4 rounded-lg bg-white p-6 shadow-[0px_14px_34px_0px_rgba(0,0,0,0.08)] ring-1 ring-white/[0.05] transition duration-300 hover:text-black/70 hover:ring-black/20 focus:outline-none focus-visible:ring-[#FF2D20] lg:pb-10 dark:bg-zinc-900 dark:ring-zinc-800 dark:hover:text-white/70 dark:hover:ring-zinc-700 dark:focus-visible:ring-[#FF2D20]"
-                                >
-                                    <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#FF2D20]/10 sm:size-16">
-                                        <svg
-                                            className="size-5 sm:size-6"
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                        >
-                                            <g fill="#FF2D20">
-                                                <path d="M8.75 4.5H5.5c-.69 0-1.25.56-1.25 1.25v4.75c0 .69.56 1.25 1.25 1.25h3.25c.69 0 1.25-.56 1.25-1.25V5.75c0-.69-.56-1.25-1.25-1.25Z" />
-                                                <path d="M24 10a3 3 0 0 0-3-3h-2V2.5a2 2 0 0 0-2-2H2a2 2 0 0 0-2 2V20a3.5 3.5 0 0 0 3.5 3.5h17A3.5 3.5 0 0 0 24 20V10ZM3.5 21.5A1.5 1.5 0 0 1 2 20V3a.5.5 0 0 1 .5-.5h14a.5.5 0 0 1 .5.5v17c0 .295.037.588.11.874a.5.5 0 0 1-.484.625L3.5 21.5ZM22 20a1.5 1.5 0 1 1-3 0V9.5a.5.5 0 0 1 .5-.5H21a1 1 0 0 1 1 1v10Z" />
-                                                <path d="M12.751 6.047h2a.75.75 0 0 1 .75.75v.5a.75.75 0 0 1-.75.75h-2A.75.75 0 0 1 12 7.3v-.5a.75.75 0 0 1 .751-.753ZM12.751 10.047h2a.75.75 0 0 1 .75.75v.5a.75.75 0 0 1-.75.75h-2A.75.75 0 0 1 12 11.3v-.5a.75.75 0 0 1 .751-.753ZM4.751 14.047h10a.75.75 0 0 1 .75.75v.5a.75.75 0 0 1-.75.75h-10A.75.75 0 0 1 4 15.3v-.5a.75.75 0 0 1 .751-.753ZM4.75 18.047h7.5a.75.75 0 0 1 .75.75v.5a.75.75 0 0 1-.75.75h-7.5A.75.75 0 0 1 4 19.3v-.5a.75.75 0 0 1 .75-.753Z" />
-                                            </g>
-                                        </svg>
-                                    </div>
-
-                                    <div className="pt-3 sm:pt-5">
-                                        <h2 className="text-xl font-semibold text-black dark:text-white">
-                                            Laravel News
-                                        </h2>
-
-                                        <p className="mt-4 text-sm/relaxed">
-                                            Laravel News is a community driven
-                                            portal and newsletter aggregating
-                                            all of the latest and most important
-                                            news in the Laravel ecosystem,
-                                            including new package releases and
-                                            tutorials.
-                                        </p>
-                                    </div>
-
-                                    <svg
-                                        className="size-6 shrink-0 self-center stroke-[#FF2D20]"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        strokeWidth="1.5"
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75"
-                                        />
-                                    </svg>
-                                </a>
-
-                                <div className="flex items-start gap-4 rounded-lg bg-white p-6 shadow-[0px_14px_34px_0px_rgba(0,0,0,0.08)] ring-1 ring-white/[0.05] lg:pb-10 dark:bg-zinc-900 dark:ring-zinc-800">
-                                    <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#FF2D20]/10 sm:size-16">
-                                        <svg
-                                            className="size-5 sm:size-6"
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                        >
-                                            <g fill="#FF2D20">
-                                                <path d="M16.597 12.635a.247.247 0 0 0-.08-.237 2.234 2.234 0 0 1-.769-1.68c.001-.195.03-.39.084-.578a.25.25 0 0 0-.09-.267 8.8 8.8 0 0 0-4.826-1.66.25.25 0 0 0-.268.181 2.5 2.5 0 0 1-2.4 1.824.045.045 0 0 0-.045.037 12.255 12.255 0 0 0-.093 3.86.251.251 0 0 0 .208.214c2.22.366 4.367 1.08 6.362 2.118a.252.252 0 0 0 .32-.079 10.09 10.09 0 0 0 1.597-3.733ZM13.616 17.968a.25.25 0 0 0-.063-.407A19.697 19.697 0 0 0 8.91 15.98a.25.25 0 0 0-.287.325c.151.455.334.898.548 1.328.437.827.981 1.594 1.619 2.28a.249.249 0 0 0 .32.044 29.13 29.13 0 0 0 2.506-1.99ZM6.303 14.105a.25.25 0 0 0 .265-.274 13.048 13.048 0 0 1 .205-4.045.062.062 0 0 0-.022-.07 2.5 2.5 0 0 1-.777-.982.25.25 0 0 0-.271-.149 11 11 0 0 0-5.6 2.815.255.255 0 0 0-.075.163c-.008.135-.02.27-.02.406.002.8.084 1.598.246 2.381a.25.25 0 0 0 .303.193 19.924 19.924 0 0 1 5.746-.438ZM9.228 20.914a.25.25 0 0 0 .1-.393 11.53 11.53 0 0 1-1.5-2.22 12.238 12.238 0 0 1-.91-2.465.248.248 0 0 0-.22-.187 18.876 18.876 0 0 0-5.69.33.249.249 0 0 0-.179.336c.838 2.142 2.272 4 4.132 5.353a.254.254 0 0 0 .15.048c1.41-.01 2.807-.282 4.117-.802ZM18.93 12.957l-.005-.008a.25.25 0 0 0-.268-.082 2.21 2.21 0 0 1-.41.081.25.25 0 0 0-.217.2c-.582 2.66-2.127 5.35-5.75 7.843a.248.248 0 0 0-.09.299.25.25 0 0 0 .065.091 28.703 28.703 0 0 0 2.662 2.12.246.246 0 0 0 .209.037c2.579-.701 4.85-2.242 6.456-4.378a.25.25 0 0 0 .048-.189 13.51 13.51 0 0 0-2.7-6.014ZM5.702 7.058a.254.254 0 0 0 .2-.165A2.488 2.488 0 0 1 7.98 5.245a.093.093 0 0 0 .078-.062 19.734 19.734 0 0 1 3.055-4.74.25.25 0 0 0-.21-.41 12.009 12.009 0 0 0-10.4 8.558.25.25 0 0 0 .373.281 12.912 12.912 0 0 1 4.826-1.814ZM10.773 22.052a.25.25 0 0 0-.28-.046c-.758.356-1.55.635-2.365.833a.25.25 0 0 0-.022.48c1.252.43 2.568.65 3.893.65.1 0 .2 0 .3-.008a.25.25 0 0 0 .147-.444c-.526-.424-1.1-.917-1.673-1.465ZM18.744 8.436a.249.249 0 0 0 .15.228 2.246 2.246 0 0 1 1.352 2.054c0 .337-.08.67-.23.972a.25.25 0 0 0 .042.28l.007.009a15.016 15.016 0 0 1 2.52 4.6.25.25 0 0 0 .37.132.25.25 0 0 0 .096-.114c.623-1.464.944-3.039.945-4.63a12.005 12.005 0 0 0-5.78-10.258.25.25 0 0 0-.373.274c.547 2.109.85 4.274.901 6.453ZM9.61 5.38a.25.25 0 0 0 .08.31c.34.24.616.561.8.935a.25.25 0 0 0 .3.127.631.631 0 0 1 .206-.034c2.054.078 4.036.772 5.69 1.991a.251.251 0 0 0 .267.024c.046-.024.093-.047.141-.067a.25.25 0 0 0 .151-.23A29.98 29.98 0 0 0 15.957.764a.25.25 0 0 0-.16-.164 11.924 11.924 0 0 0-2.21-.518.252.252 0 0 0-.215.076A22.456 22.456 0 0 0 9.61 5.38Z" />
-                                            </g>
-                                        </svg>
-                                    </div>
-
-                                    <div className="pt-3 sm:pt-5">
-                                        <h2 className="text-xl font-semibold text-black dark:text-white">
-                                            Vibrant Ecosystem
-                                        </h2>
-
-                                        <p className="mt-4 text-sm/relaxed">
-                                            Laravel's robust library of
-                                            first-party tools and libraries,
-                                            such as{' '}
-                                            <a
-                                                href="https://forge.laravel.com"
-                                                className="rounded-sm underline hover:text-black focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FF2D20] dark:hover:text-white dark:focus-visible:ring-[#FF2D20]"
-                                            >
-                                                Forge
-                                            </a>
-                                            ,{' '}
-                                            <a
-                                                href="https://vapor.laravel.com"
-                                                className="rounded-sm underline hover:text-black focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FF2D20] dark:hover:text-white"
-                                            >
-                                                Vapor
-                                            </a>
-                                            ,{' '}
-                                            <a
-                                                href="https://nova.laravel.com"
-                                                className="rounded-sm underline hover:text-black focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FF2D20] dark:hover:text-white"
-                                            >
-                                                Nova
-                                            </a>
-                                            ,{' '}
-                                            <a
-                                                href="https://envoyer.io"
-                                                className="rounded-sm underline hover:text-black focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FF2D20] dark:hover:text-white"
-                                            >
-                                                Envoyer
-                                            </a>
-                                            , and{' '}
-                                            <a
-                                                href="https://herd.laravel.com"
-                                                className="rounded-sm underline hover:text-black focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FF2D20] dark:hover:text-white"
-                                            >
-                                                Herd
-                                            </a>{' '}
-                                            help you take your projects to the
-                                            next level. Pair them with powerful
-                                            open source libraries like{' '}
-                                            <a
-                                                href="https://laravel.com/docs/billing"
-                                                className="rounded-sm underline hover:text-black focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FF2D20] dark:hover:text-white"
-                                            >
-                                                Cashier
-                                            </a>
-                                            ,{' '}
-                                            <a
-                                                href="https://laravel.com/docs/dusk"
-                                                className="rounded-sm underline hover:text-black focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FF2D20] dark:hover:text-white"
-                                            >
-                                                Dusk
-                                            </a>
-                                            ,{' '}
-                                            <a
-                                                href="https://laravel.com/docs/broadcasting"
-                                                className="rounded-sm underline hover:text-black focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FF2D20] dark:hover:text-white"
-                                            >
-                                                Echo
-                                            </a>
-                                            ,{' '}
-                                            <a
-                                                href="https://laravel.com/docs/horizon"
-                                                className="rounded-sm underline hover:text-black focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FF2D20] dark:hover:text-white"
-                                            >
-                                                Horizon
-                                            </a>
-                                            ,{' '}
-                                            <a
-                                                href="https://laravel.com/docs/sanctum"
-                                                className="rounded-sm underline hover:text-black focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FF2D20] dark:hover:text-white"
-                                            >
-                                                Sanctum
-                                            </a>
-                                            ,{' '}
-                                            <a
-                                                href="https://laravel.com/docs/telescope"
-                                                className="rounded-sm underline hover:text-black focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FF2D20] dark:hover:text-white"
-                                            >
-                                                Telescope
-                                            </a>
-                                            , and more.
-                                        </p>
-                                    </div>
+                        <div className="bg-white border border-[#E8DFCB] rounded-md p-7 font-mono text-sm">
+                            <p className="text-[#8A8070] text-xs uppercase tracking-widest mb-5">
+                                Example: Jack Daniels 750ml
+                            </p>
+                            <div className="space-y-3 text-[#5C5346]">
+                                <div className="flex justify-between">
+                                    <span>Empty bottle weight</span>
+                                    <span className="text-[#241C15]">500g</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Full bottle weight</span>
+                                    <span className="text-[#241C15]">
+                                        1250g
+                                    </span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Capacity</span>
+                                    <span className="text-[#241C15]">
+                                        750ml
+                                    </span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Shop shot size</span>
+                                    <span className="text-[#241C15]">25ml</span>
+                                </div>
+                                <div className="border-t border-[#E8DFCB] my-1" />
+                                <div className="flex justify-between">
+                                    <span>Shots per full bottle</span>
+                                    <span className="text-[#D8392A]">30</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Weigh it mid-shift, get</span>
+                                    <span className="text-[#D8392A]">
+                                        exact shots left
+                                    </span>
                                 </div>
                             </div>
-                        </main>
+                            <div className="border-t border-[#E8DFCB] my-5" />
+                            <p className="text-[#8A8070] text-xs uppercase tracking-widest mb-5">
+                                Example: six-pack (any shop type)
+                            </p>
+                            <div className="space-y-3 text-[#5C5346]">
+                                <div className="flex justify-between">
+                                    <span>Add stock</span>
+                                    <span className="text-[#241C15]">
+                                        1 six-pack
+                                    </span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>System records</span>
+                                    <span className="text-[#D8392A]">
+                                        6 units
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
 
-                        <footer className="py-16 text-center text-sm text-black dark:text-white/70">
-                            Laravel v{laravelVersion} (PHP v{phpVersion})
-                        </footer>
+                {/* ---------------- DOCS ---------------- */}
+                <section
+                    id="docs"
+                    className="border-t border-[#E8DFCB] bg-[#F5F1E4]"
+                >
+                    <div className="max-w-4xl mx-auto px-5 sm:px-8 py-20">
+                        <SectionEyebrow>Documentation</SectionEyebrow>
+                        <h2 className="font-serif text-3xl sm:text-4xl mb-6">
+                            Everything explained, right here.
+                        </h2>
+                        <p className="text-[#5C5346] mb-8 max-w-xl">
+                            Stock works a little differently depending on your
+                            shop type — pick the one that matches your business
+                            to see the right guide.
+                        </p>
+
+                        <div className="inline-flex rounded-md border border-[#E8DFCB] bg-white p-1 mb-10">
+                            {[
+                                ["shop", "Normal Shop"],
+                                ["bar", "Bar & Resto-Bar"],
+                            ].map(([value, label]) => (
+                                <button
+                                    key={value}
+                                    onClick={() => {
+                                        setShopType(value);
+                                        setOpenDoc(0);
+                                    }}
+                                    className={`text-sm px-4 py-2 rounded-[5px] transition-colors ${
+                                        shopType === value
+                                            ? "bg-[#D8392A] text-white"
+                                            : "text-[#5C5346] hover:text-[#241C15]"
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div>
+                            {activeDocs.map((item, i) => (
+                                <AccordionItem
+                                    key={item.q}
+                                    q={item.q}
+                                    a={item.a}
+                                    isOpen={openDoc === i}
+                                    onClick={() =>
+                                        setOpenDoc(openDoc === i ? -1 : i)
+                                    }
+                                />
+                            ))}
+                        </div>
+                    </div>
+                </section>
+
+                {/* ---------------- DOWNLOADS ---------------- */}
+                <section className="max-w-6xl mx-auto px-5 sm:px-8 py-20">
+                    <SectionEyebrow>Take it with you</SectionEyebrow>
+                    <h2 className="font-serif text-3xl sm:text-4xl mb-12 max-w-xl">
+                        Downloadable resources for you and your staff.
+                    </h2>
+
+                    <div className="grid sm:grid-cols-2 gap-5">
+                        <div className="border border-[#E8DFCB] rounded-md p-7 flex flex-col bg-white">
+                            <Icon.Receipt className="w-7 h-7 text-[#D8392A] mb-4" />
+                            <h3 className="font-serif text-xl mb-2">
+                                Quick Start Guide
+                            </h3>
+                            <p className="text-sm text-[#5C5346] leading-relaxed mb-6 flex-1">
+                                A short PDF walking through setup, accounts,
+                                stock and units, and how cash-up works — worth
+                                printing and keeping by the till.
+                            </p>
+                            <button
+                                onClick={printQuickStart}
+                                className="inline-block text-sm px-5 py-2.5 rounded-md bg-[#D8392A] text-white font-medium hover:bg-[#c02f21] transition-colors w-fit"
+                            >
+                                Download the guide
+                            </button>
+                        </div>
+
+                        <div className="border border-[#E8DFCB] rounded-md p-7 flex flex-col bg-white">
+                            <Icon.Pin className="w-7 h-7 text-[#D8392A] mb-4" />
+                            <h3 className="font-serif text-xl mb-2">
+                                Staff Quick Reference
+                            </h3>
+                            <p className="text-sm text-[#5C5346] leading-relaxed mb-6 flex-1">
+                                One page to print and pin up near the till —
+                                logging in, fast sales versus tables, and the
+                                one thing every staff member must do before
+                                clocking off.
+                            </p>
+                            <button
+                                onClick={printStaffSheet}
+                                className="inline-block text-sm px-5 py-2.5 rounded-md border border-[#E8DFCB] text-[#241C15] hover:border-[#D8392A] transition-colors w-fit"
+                            >
+                                Download the cheat sheet
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                {/* ---------------- CONTACT / CTA ---------------- */}
+                <section id="contact" className="bg-[#123D26] text-[#FFFCF5]">
+                    <div className="max-w-6xl mx-auto px-5 sm:px-8 py-20 grid lg:grid-cols-2 gap-14">
+                        <div>
+                            <SectionEyebrow tone="cream">
+                                Get in touch
+                            </SectionEyebrow>
+                            <h2 className="font-serif text-3xl sm:text-4xl mb-6 max-w-md">
+                                Based in Harare. Happy to talk before you sign
+                                up.
+                            </h2>
+                            <p className="text-[#CFE3D3] leading-relaxed mb-8 max-w-md">
+                                Questions about whether Mom & Pop POS fits your
+                                shop or bar? Reach out directly — real answers,
+                                no call centre.
+                            </p>
+                            <div className="space-y-4">
+                                <a
+                                    href="https://wa.me/263773270659"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex items-center gap-3 text-[#FFFCF5] hover:text-[#E4A23A] transition-colors w-fit"
+                                >
+                                    <Icon.Whatsapp className="w-5 h-5 text-[#E4A23A]" />
+                                    <span>
+                                        WhatsApp or call: +263 77 327 0659
+                                    </span>
+                                </a>
+                                <a
+                                    href="mailto:michael@michaelmwanza.site"
+                                    className="flex items-center gap-3 text-[#FFFCF5] hover:text-[#E4A23A] transition-colors w-fit"
+                                >
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="1.6"
+                                        className="w-5 h-5 text-[#E4A23A]"
+                                    >
+                                        <rect
+                                            x="3"
+                                            y="5"
+                                            width="18"
+                                            height="14"
+                                            rx="2"
+                                        />
+                                        <path d="M3 7l9 6 9-6" />
+                                    </svg>
+                                    <span>michael@michaelmwanza.site</span>
+                                </a>
+                            </div>
+                            <p className="mt-8 text-xs text-[#8FB89B] font-mono max-w-md">
+                                Outside Zimbabwe and interested? Get in touch —
+                                a version for your country may be on the way.
+                            </p>
+                        </div>
+
+                        <div className="flex flex-col justify-center bg-[#0E301D] border border-[#1C4E32] rounded-md p-10">
+                            <h3 className="font-serif text-2xl mb-3">
+                                Ready when you are.
+                            </h3>
+                            <p className="text-sm text-[#CFE3D3] leading-relaxed mb-7">
+                                Create your account, set up your shop, and
+                                you'll be ringing up sales the same day.
+                            </p>
+                            <Link
+                                href={route("register")}
+                                className="text-center px-6 py-3 rounded-md bg-[#D8392A] text-white font-medium hover:bg-[#c02f21] transition-colors"
+                            >
+                                Create your account
+                            </Link>
+                        </div>
+                    </div>
+                </section>
+
+                {/* ---------------- FOOTER ---------------- */}
+                <footer className="border-t border-[#E8DFCB]">
+                    <div className="max-w-6xl mx-auto px-5 sm:px-8 py-10 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <ApplicationLogo className="h-8 w-auto" />
+                        <p className="text-xs text-[#8A8070] font-mono">
+                            © {new Date().getFullYear()} Mom & Pop POS · Harare,
+                            Zimbabwe
+                        </p>
+                    </div>
+                </footer>
+
+                {/* Off-screen printable content — rendered for react-to-print, not visible on the page */}
+                <div
+                    style={{
+                        position: "absolute",
+                        left: "-99999px",
+                        top: 0,
+                        width: 0,
+                        height: 0,
+                        overflow: "hidden",
+                    }}
+                >
+                    <div ref={quickStartRef}>
+                        <QuickStartGuideContent />
+                    </div>
+                    <div ref={staffSheetRef}>
+                        <StaffCheatSheetContent />
                     </div>
                 </div>
             </div>
