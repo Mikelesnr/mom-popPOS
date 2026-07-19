@@ -1,16 +1,21 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { Link } from "@inertiajs/react";
 import TerminalPointOfSale from "@/Components/Sales/TerminalPointOfSale";
-
-// Placeholder components for when you add your stock management features
 import StockCountWorksheet from "@/Components/Stock/StockCountWorksheet";
 
 export default function Cashier({ auth }) {
+    const [view, setView] = useState(() => {
+        return localStorage.getItem("terminalView") || "pos";
+    });
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const [view, setView] = useState("pos");
+
+    useEffect(() => {
+        localStorage.setItem("terminalView", view);
+    }, [view]);
 
     return (
         <div className="space-y-4">
-            {/* Header with Hamburger Menu */}
+            {/* Header */}
             <div className="bg-white p-4 shadow-sm rounded-xl border border-gray-100 flex justify-between items-center">
                 <div>
                     <h1 className="text-xl font-bold text-gray-800">
@@ -22,7 +27,6 @@ export default function Cashier({ auth }) {
                 </div>
 
                 <div className="flex items-center gap-4">
-                    {/* Status Indicator */}
                     <div className="hidden sm:flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                         <span className="text-xs font-semibold text-emerald-600 uppercase tracking-wider">
@@ -30,7 +34,7 @@ export default function Cashier({ auth }) {
                         </span>
                     </div>
 
-                    {/* Hamburger Button */}
+                    {/* Hamburger */}
                     <button
                         onClick={() => setIsMenuOpen(!isMenuOpen)}
                         className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
@@ -64,7 +68,9 @@ export default function Cashier({ auth }) {
                             setView("pos");
                             setIsMenuOpen(false);
                         }}
-                        className="px-4 py-2 text-left rounded-lg hover:bg-gray-50 text-sm font-medium"
+                        className={`px-4 py-2 text-left rounded-lg hover:bg-gray-50 text-sm font-medium ${
+                            view === "pos" ? "bg-gray-200" : ""
+                        }`}
                     >
                         POS Terminal
                     </button>
@@ -73,14 +79,29 @@ export default function Cashier({ auth }) {
                             setView("stock");
                             setIsMenuOpen(false);
                         }}
-                        className="px-4 py-2 text-left rounded-lg hover:bg-gray-50 text-sm font-medium"
+                        className={`px-4 py-2 text-left rounded-lg hover:bg-gray-50 text-sm font-medium ${
+                            view === "stock" ? "bg-gray-200" : ""
+                        }`}
                     >
                         Stock Count
                     </button>
+                    {/* Logout */}
+                    <form
+                        method="post"
+                        action={route("logout")}
+                        onSubmit={() => localStorage.removeItem("terminalView")}
+                    >
+                        <button
+                            type="submit"
+                            className="px-4 py-2 text-left rounded-lg hover:bg-gray-50 text-sm font-medium text-red-600"
+                        >
+                            Log Out
+                        </button>
+                    </form>
                 </div>
             )}
 
-            {/* Active view area */}
+            {/* Active view */}
             <div className="transition-all">
                 {view === "pos" && <TerminalPointOfSale />}
                 {view === "stock" && <StockCountWorksheet />}
