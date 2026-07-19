@@ -39,10 +39,10 @@ export default function ProductGrid({
                         <button
                             key={product.id}
                             onClick={() => handleProductClick(product)}
-                            className={`h-24 p-2 rounded-2xl text-xs font-bold transition-all flex flex-col items-center justify-center text-center break-words shadow-sm border-2 ${
+                            className={`h-28 p-3 rounded-2xl text-base sm:text-lg font-bold leading-snug transition-all flex flex-col items-center justify-center text-center break-words shadow-sm border-2 ${
                                 isEven
-                                    ? "bg-indigo-50 text-indigo-900 border-indigo-100 hover:bg-indigo-100"
-                                    : "bg-emerald-50 text-emerald-900 border-emerald-100 hover:bg-emerald-100"
+                                    ? "bg-indigo-50 text-indigo-900 border-indigo-100 hover:bg-indigo-100 active:bg-indigo-200"
+                                    : "bg-emerald-50 text-emerald-900 border-emerald-100 hover:bg-emerald-100 active:bg-emerald-200"
                             }`}
                         >
                             {product.name}
@@ -62,15 +62,15 @@ export default function ProductGrid({
 
             {/* Standard Unit Keypad Modal */}
             {isKeypadOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-                    <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
-                        <h2 className="font-bold mb-4 text-center">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 w-full max-w-sm">
+                        <h2 className="font-bold text-lg text-gray-900 mb-4 text-center">
                             Quantity for {selectedProduct?.name}
                         </h2>
                         <NumericKeypad onConfirm={handleUnitConfirm} />
                         <button
                             onClick={() => setIsKeypadOpen(false)}
-                            className="w-full mt-2 text-gray-500 text-sm"
+                            className="w-full mt-3 py-2 text-sm text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-50 transition"
                         >
                             Cancel
                         </button>

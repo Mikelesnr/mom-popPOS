@@ -9,7 +9,7 @@ export const db = new Dexie("MomnPopPWA");
  * 1. Added 'metadata.type' index to order_items for fast report generation.
  * 2. Standardized indexes across all stores.
  */
-db.version(9).stores({
+db.version(10).stores({
     catalogs: "shop_id",
     orders: "id, shift_id, user_id, status, created_at, synced_at",
     open_tables: "id, shift_id, user_id, status, created_at, synced_at",
@@ -18,8 +18,29 @@ db.version(9).stores({
     units: "id, name, type",
     stock_counts: "product_id, quantity_total_base_units, created_at",
     temp_stock_adds: "product_id, added_quantity, created_at",
+    shops: "id, name, shop_type",
+    shop_owners: "id, shop_id, user_id",
     users: "id, name, role",
 });
+
+/**
+ * Dumps the entire owner's portfolio into Dexie.
+ * Call this after a successful login or explicit manual sync.
+ */
+export const syncPortfolioToDexie = async (shops) => {
+    await db.transaction("rw", db.shops, async () => {
+        for (const shop of shops) {
+            await db.shops.put(shop); // .put() handles the "upsert" automatically
+        }
+    });
+};
+
+/**
+ * Get all shops for the owner from Dexie.
+ */
+export const getAllShopsLocal = async () => {
+    return await db.shops.toArray();
+};
 
 /**
  * Ensures a user exists in the local Dexie store.
