@@ -72,6 +72,7 @@ Route::middleware('auth')->group(function () {
 
     // Register Cashup Sub-Router
     require __DIR__ . '/cashup.php';
+
 });
 
 require __DIR__ . '/auth.php';
