@@ -34,7 +34,7 @@ Route::get('/dashboard', function () {
             'user' => $user,
         ],
         'shopId' => $user->shop_id ?? null,
-        'shops' => $user->shops ?? [], // optional if owner dashboards need it
+        'shops' => $user->shopsOwned ?? [], // optional if owner dashboards need it
         'shift' => $currentShift ? [
             'id' => $currentShift->id,
             'opened_at' => $currentShift->opened_at,

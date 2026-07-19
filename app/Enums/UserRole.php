@@ -4,15 +4,38 @@ namespace App\Enums;
 
 enum UserRole: string
 {
-    case SYSTEM_ADMIN = 'admin';
-    case SYSTEM_STAFF = 'system_staff';
-    case SYSTEM_TECHNICIAN = 'system_technician';
-    case SYSTEM_ACCOUNTANT = 'system_accountant';
+    // System Roles
+    case SYSTEM_ADMIN = 'system_admin';
+
+    // Shop Roles (Bound to a shop_id)
+    case OWNER = 'owner';
     case SHOP_MANAGER = 'shop_manager';
     case MANAGER = 'manager';
-    case CASHIER = 'cashier';
     case BARTENDER = 'bartender';
     case WAITER = 'waiter';
     case STAFF = 'staff';
-    case OWNER = 'owner';
+
+    /**
+     * Check if the user is a system-level user.
+     */
+    public function isSystemUser(): bool
+    {
+        return $this === self::SYSTEM_ADMIN;
+    }
+
+    /**
+     * Readable labels for frontend dropdowns.
+     */
+    public function label(): string
+    {
+        return match ($this) {
+            self::SYSTEM_ADMIN => 'System Admin',
+            self::OWNER => 'Owner',
+            self::SHOP_MANAGER => 'Shop Manager',
+            self::MANAGER => 'Manager',
+            self::BARTENDER => 'Bartender',
+            self::WAITER => 'Waiter',
+            self::STAFF => 'Staff',
+        };
+    }
 }

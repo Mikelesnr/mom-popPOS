@@ -21,21 +21,21 @@ export default function AllTables() {
 
     return (
         <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 p-3 content-start">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 p-3 content-start">
                 {tables?.map((table, index) => (
                     <button
                         key={table.id}
                         onClick={() => setSelectedTable(table)}
-                        className={`h-24 p-3 rounded-2xl shadow-sm border-2 transition-all flex flex-col justify-center items-center text-center ${
+                        className={`h-24 p-2 rounded-2xl shadow-sm border-2 transition-all flex flex-col justify-center items-center text-center ${
                             index % 2 === 0
-                                ? "bg-stone-50 border-stone-200 hover:bg-stone-100"
-                                : "bg-emerald-50 border-emerald-100 hover:bg-emerald-100"
+                                ? "bg-stone-50 border-stone-200 hover:bg-stone-100 active:bg-stone-200"
+                                : "bg-emerald-50 border-emerald-100 hover:bg-emerald-100 active:bg-emerald-200"
                         }`}
                     >
-                        <span className="font-bold text-sm text-gray-900">
+                        <span className="font-bold text-base sm:text-lg leading-snug text-gray-900 break-words">
                             {table.name}
                         </span>
-                        <span className="text-[10px] text-gray-600 mt-1 uppercase tracking-wider">
+                        <span className="text-xs sm:text-sm text-gray-600 mt-1 uppercase tracking-wider truncate max-w-full">
                             {table.staffName}
                         </span>
                     </button>
