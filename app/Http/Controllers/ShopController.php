@@ -3,34 +3,73 @@
 namespace App\Http\Controllers;
 
 use App\Models\Shop;
+use App\Models\ShotSize;
+use App\Enums\ShopType;
 use Illuminate\Http\Request;
 
 class ShopController extends Controller
 {
     public function store(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'name' => 'required|string|max:255',
             'shop_type' => 'required',
+            'latitude' => 'required|numeric',
+            'longitude' => 'required|numeric',
+            'allowed_radius' => 'required|integer',
+            'size_ml' => 'nullable|required_if:shop_type,bar,restobar|integer',
         ]);
 
-        // Create the shop
-        $shop = Shop::create($request->only(['name', 'shop_type']));
+        // Create the shop with coordinates
+        $shop = Shop::create([
+            'name' => $validated['name'],
+            'shop_type' => $validated['shop_type'],
+            'latitude' => $validated['latitude'],
+            'longitude' => $validated['longitude'],
+            'allowed_radius' => $validated['allowed_radius'] ?? 100, // Default 100m
+        ]);
 
-        // Link the current user as an owner
+        // 2. Conditionally create ShotSize for Bar/Restobar
+        if (in_array($validated['shop_type'], ['bar', 'restobar'])) {
+            ShotSize::create([
+                'shop_id' => $shop->id,
+                'size_ml' => $validated['size_ml'] ?? 25,
+            ]);
+        }
+
+        // 3. Link owner
         $request->user()->shopsOwned()->attach($shop->id);
 
-        return redirect()->route('dashboard')->with('success', 'Shop created successfully.');
+        return redirect()->back()->with('success', 'Shop created successfully.');
     }
 
-    public function update(Request $request, Shop $shop)
+    public function updateShotSize(Request $request, Shop $shop)
     {
-        // Authorization: Ensure the user actually owns this shop
+        // Ensure user owns this shop[cite: 7]
         if (!$request->user()->shopsOwned->contains($shop->id)) {
             abort(403);
         }
 
-        $shop->update($request->validate(['name' => 'string']));
-        return back()->with('success', 'Shop updated.');
+        $validated = $request->validate(['size_ml' => 'required|integer']);
+
+        ShotSize::updateOrCreate(
+            ['shop_id' => $shop->id],
+            ['size_ml' => $validated['size_ml']]
+        );
+
+        return back()->with('success', 'Shot size updated.');
+    }
+
+    // ShopController.php
+    public function getOwnerPortfolio(Request $request)
+    {
+        // Fetch all shops related to the authenticated owner
+        $shops = Shop::where('owner_id', $request->user()->id)->get();
+
+        // You can return just the shops, or include shop_owners/staff data
+        return response()->json([
+            'shops' => $shops,
+            'synced_at' => now()->toDateTimeString(),
+        ]);
     }
 }

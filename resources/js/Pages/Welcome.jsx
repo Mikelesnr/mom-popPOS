@@ -464,7 +464,7 @@ export default function Welcome({ auth }) {
                 <section className="max-w-6xl mx-auto px-5 sm:px-8 pt-16 pb-20 sm:pt-24 sm:pb-28 grid lg:grid-cols-2 gap-14 items-center">
                     <div className="rise-in">
                         <p className="font-mono text-xs tracking-[0.25em] uppercase text-[#1C7A46] mb-5">
-                            Point of sale, built for the till
+                            Point of sale, built for Your Device
                         </p>
                         <h1 className="font-serif text-4xl sm:text-5xl lg:text-[3.4rem] leading-[1.08] mb-3 text-[#241C15]">
                             Sales don't stop

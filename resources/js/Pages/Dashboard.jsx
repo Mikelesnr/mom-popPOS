@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
 import { Head } from "@inertiajs/react";
-
+import { syncPortfolioToDexie } from "@/Utils/db";
 import AdminDashboard from "./Dashboards/Admin";
 import OwnerDashboard from "./Dashboards/Owner";
 import ShopManagerDashboard from "./Dashboards/ShopManager";
@@ -11,6 +11,15 @@ import { syncUserToDexie } from "@/Utils/db";
 
 export default function Dashboard({ auth, shopId, shopType, shops, shift }) {
     useEffect(() => {
+        // Sync the shops provided by Laravel directly into Dexie
+        // This ensures your offline-first logic has the data immediately
+        if (shops && shops.length > 0) {
+            // 1. Sync to Dexie for offline logic
+            syncPortfolioToDexie(shops, []);
+
+            // 2. Also keep a copy in localStorage for immediate read
+            localStorage.setItem("cached_shops", JSON.stringify(shops));
+        }
         // Handle Shop ID
         if (shopId) {
             localStorage.setItem("terminal_shop_id", shopId);
@@ -36,7 +45,7 @@ export default function Dashboard({ auth, shopId, shopType, shops, shift }) {
         if (auth.user) {
             syncUserToDexie(auth.user);
         }
-    }, [auth.user, shopId, shopType, shift]);
+    }, [auth.user, shopId, shopType, shift, shops]);
 
     const userRole = auth.user.role;
 
