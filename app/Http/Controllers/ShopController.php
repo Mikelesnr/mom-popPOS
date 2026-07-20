@@ -6,6 +6,7 @@ use App\Models\Shop;
 use App\Models\ShotSize;
 use App\Enums\ShopType;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class ShopController extends Controller
 {
@@ -63,10 +64,9 @@ class ShopController extends Controller
     // ShopController.php
     public function getOwnerPortfolio(Request $request)
     {
-        // Fetch all shops related to the authenticated owner
-        $shops = Shop::where('owner_id', $request->user()->id)->get();
+        // Use ->values() to ensure it's an array, not an associative object
+        $shops = Auth::user()->shopsOwned()->get()->values();
 
-        // You can return just the shops, or include shop_owners/staff data
         return response()->json([
             'shops' => $shops,
             'synced_at' => now()->toDateTimeString(),

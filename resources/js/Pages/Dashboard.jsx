@@ -10,31 +10,62 @@ import CashierDashboard from "./Dashboards/Cashier";
 import { syncUserToDexie } from "@/Utils/db";
 
 export default function Dashboard({ auth, shopId, shopType, shops, shift }) {
-    console.log(shopType);
-    useEffect(() => {
-        console.log(shops);
-        // Sync the shops provided by Laravel directly into Dexie
-        // This ensures your offline-first logic has the data immediately
-        if (shops && shops.length > 0) {
-            // 1. Sync to Dexie for offline logic
-            syncPortfolioToDexie(shops, []);
+    const [hasAttemptedFetch, setHasAttemptedFetch] = React.useState(false);
 
-            // 2. Also keep a copy in localStorage for immediate read
+    useEffect(() => {
+        const fetchAndSyncShops = async () => {
+            try {
+                const response = await fetch(route("get.shops"), {
+                    method: "GET",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRF-TOKEN":
+                            document.querySelector('meta[name="csrf-token"]')
+                                ?.content || "",
+                    },
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log("Full API Response:", data);
+                    if (data.shops) {
+                        // 1. Sync to Dexie
+                        await syncPortfolioToDexie(data.shops);
+                        // 2. Update localStorage
+                        localStorage.setItem(
+                            "cached_shops",
+                            JSON.stringify(data.shops),
+                        );
+                        console.log("✅ Shops fetched manually via fetch API.");
+                    }
+                }
+            } catch (error) {
+                console.error("❌ Failed to fetch shops manually:", error);
+            }
+        };
+
+        // --- SHOP SYNC LOGIC ---
+        // If props have data, sync it. If empty, attempt one manual fetch.
+        if (shops && shops.length > 0) {
+            syncPortfolioToDexie(shops);
             localStorage.setItem("cached_shops", JSON.stringify(shops));
+        } else if (!hasAttemptedFetch) {
+            setHasAttemptedFetch(true); // Prevent infinite loops
+            fetchAndSyncShops();
         }
-        // Handle Shop ID
+
+        // --- TERMINAL PROVISIONING ---
         if (shopId) {
             localStorage.setItem("terminal_shop_id", shopId);
             console.log("Terminal provisioned for Shop ID:", shopId);
         }
 
-        // Handle Shop Type
         if (shopType) {
             localStorage.setItem("terminal_shop_type", shopType);
             console.log("Terminal provisioned for Shop Type:", shopType);
         }
 
-        // Handle Shift
+        // --- SHIFT MANAGEMENT ---
         if (shift) {
             const localShift = localStorage.getItem("terminal_shift_id");
             if (!localShift || localShift !== shift.id) {
@@ -44,10 +75,11 @@ export default function Dashboard({ auth, shopId, shopType, shops, shift }) {
             localStorage.removeItem("terminal_shift_id");
         }
 
+        // --- USER AUTH SYNC ---
         if (auth.user) {
             syncUserToDexie(auth.user);
         }
-    }, [auth.user, shopId, shopType, shift, shops]);
+    }, [auth.user, shopId, shopType, shift, shops, hasAttemptedFetch]);
 
     const userRole = auth.user.role;
 
