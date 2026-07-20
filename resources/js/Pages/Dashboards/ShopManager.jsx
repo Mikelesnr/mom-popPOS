@@ -8,9 +8,11 @@ import WasteLogForm from "@/Components/Stock/WasteLogForm";
 import StockCountWorksheet from "@/Components/Stock/StockCountWorksheet";
 import Cashup from "@/Components/Cashup/Cashup";
 import ExpenseManager from "@/Components/Expenses/ExpenseManager";
+import AllTables from "@/Components/Sales/ALLTables";
 
 const NAV_ITEMS = [
     { key: "pos", label: "POS Terminal" },
+    { key: "tables", label: "Manage Tables" },
     { key: "stock", label: "Add Product" },
     { key: "edit", label: "Edit Product" },
     { key: "add-stock", label: "Add Stock" },
@@ -114,6 +116,7 @@ export default function ShopManager({ auth }) {
                 {view === "stock-count" && <StockCountWorksheet />}
                 {view === "cashup" && <Cashup />}
                 {view === "expense" && <ExpenseManager />}
+                {view === "tables" && <AllTables />}
             </div>
         </div>
     );
