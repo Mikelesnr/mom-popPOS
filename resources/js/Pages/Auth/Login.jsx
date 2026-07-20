@@ -6,7 +6,8 @@ import PrimaryButton from "@/Components/PrimaryButton";
 import TextInput from "@/Components/TextInput";
 import GuestLayout from "@/Layouts/GuestLayout";
 import { Head, Link, useForm } from "@inertiajs/react";
-import SignIn from "./SignIn"; // Import the clean PIN component
+import SignIn from "./SignIn";
+import { clearUsersLocal } from "@/Utils/db";
 
 export default function Login({ status, canResetPassword }) {
     const [terminalShopId, setTerminalShopId] = useState(null);
@@ -35,12 +36,22 @@ export default function Login({ status, canResetPassword }) {
         });
     };
 
-    const handleResetTerminal = () => {
+    const handleResetTerminal = async () => {
+        // 1. Clear Terminal IDs from LocalStorage
         localStorage.removeItem("terminal_shop_id");
+        localStorage.removeItem("terminal_shop_type");
+        localStorage.removeItem("terminal_shift_id");
+
+        // 2. Clear only the user cache
+        await clearUsersLocal();
+
+        // 3. Reset UI State
         setTerminalShopId(null);
         setIsTerminalMode(false);
-    };
 
+        // 4. Force reload
+        window.location.reload();
+    };
     // If terminal shop_id is detected locally, swap out for the PIN entry pad layout
     if (isTerminalMode) {
         return (

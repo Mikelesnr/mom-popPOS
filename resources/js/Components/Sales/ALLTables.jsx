@@ -7,10 +7,16 @@ export default function AllTables() {
     const [selectedTable, setSelectedTable] = useState(null);
 
     const tables = useLiveQuery(async () => {
+        // 1. Get the current shift ID from storage
+        const currentShopId = localStorage.getItem("terminal_shop_id");
+
+        // 2. Filter open_tables by status AND the current shift ID
         const openTables = await db.open_tables
-            .where("status")
-            .equals("open")
+            .where("shop_id")
+            .equals(currentShopId || "")
+            .filter((t) => t.status === "open")
             .toArray();
+
         const users = await db.users.toArray();
 
         return openTables.map((t) => ({

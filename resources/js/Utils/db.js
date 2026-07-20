@@ -11,8 +11,9 @@ export const db = new Dexie("MomnPopPWA");
  */
 db.version(10).stores({
     catalogs: "shop_id",
-    orders: "id, shift_id, user_id, status, created_at, synced_at",
-    open_tables: "id, shift_id, user_id, status, created_at, synced_at",
+    orders: "id, shop_id, shift_id, user_id, status, created_at, synced_at",
+    open_tables:
+        "id, shop_id, shift_id, user_id, status, created_at, synced_at",
     order_items: "id, orderable_id, product_id, placed, synced_at, metadata",
     categories: "id, shop_id, name",
     units: "id, name, type",
@@ -216,9 +217,22 @@ const attachItemsToRecords = async (records) => {
  */
 export const syncOrdersToServer = async () => {
     await getAndEnsureShiftConsistency();
+
+    // 1. Get current context
+    const currentShopId = localStorage.getItem("terminal_shop_id");
+    const localUsers = await db.users.toArray();
+    const localUserIds = new Set(localUsers.map((u) => u.id));
+
+    // 2. Filter orders by shop_id and ensure user exists locally
     const unsyncedOrders = await db.orders
-        .filter((o) => o.synced_at == null)
+        .filter(
+            (o) =>
+                o.synced_at == null &&
+                o.shop_id === currentShopId &&
+                localUserIds.has(o.user_id),
+        )
         .toArray();
+
     if (unsyncedOrders.length === 0) return;
 
     const response = await fetch("/sales/sync-orders", {
@@ -233,7 +247,6 @@ export const syncOrdersToServer = async () => {
     });
 
     if (!response.ok) {
-        // This will pass the specific message to the catch block
         throw new Error(await handleSyncError(response));
     }
 
@@ -254,9 +267,15 @@ export const syncOrdersToServer = async () => {
  */
 export const syncTablesToServer = async () => {
     await getAndEnsureShiftConsistency();
+
+    // 1. Get current shop context
+    const currentShopId = localStorage.getItem("terminal_shop_id");
+
+    // 2. Filter tables by shop_id and synced status
     const tablesToSync = await db.open_tables
-        .filter((t) => t.synced_at == null)
+        .filter((t) => t.synced_at == null && t.shop_id === currentShopId)
         .toArray();
+
     if (tablesToSync.length === 0) return;
 
     const response = await fetch("/sales/sync-tables", {

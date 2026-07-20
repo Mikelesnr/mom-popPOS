@@ -10,6 +10,7 @@ import CashierDashboard from "./Dashboards/Cashier";
 import { syncUserToDexie } from "@/Utils/db";
 
 export default function Dashboard({ auth, shopId, shopType, shops, shift }) {
+    console.log(shopType);
     useEffect(() => {
         // Sync the shops provided by Laravel directly into Dexie
         // This ensures your offline-first logic has the data immediately
