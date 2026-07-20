@@ -21,10 +21,19 @@ import CategoryManager from "@/Components/Stock/CategoryManager";
 export default function ProductForm() {
     const [isBottle, setIsBottle] = useState(false);
     const [showCategoryManager, setShowCategoryManager] = useState(false);
-    const categories = useLiveQuery(() => db.categories.toArray()) || [];
     const units = useLiveQuery(() => db.units.toArray()) || [];
     const shopType = localStorage.getItem("terminal_shop_type");
     const isShopMode = shopType === "shop";
+
+    const currentShopId = localStorage.getItem("terminal_shop_id");
+
+    const categories =
+        useLiveQuery(async () => {
+            return await db.categories
+                .where("shop_id")
+                .equals(currentShopId)
+                .toArray();
+        }, [currentShopId]) || [];
 
     const filteredUnits = isBottle
         ? units

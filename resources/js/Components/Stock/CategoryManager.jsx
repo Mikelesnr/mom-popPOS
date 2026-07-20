@@ -23,8 +23,6 @@ const titleCase = (name) =>
         );
 
 export default function CategoryManager({ open, onClose }) {
-    const categories = useLiveQuery(() => db.categories.toArray()) || [];
-
     const [newName, setNewName] = useState("");
     const [creating, setCreating] = useState(false);
     const [createError, setCreateError] = useState(null);
@@ -37,6 +35,16 @@ export default function CategoryManager({ open, onClose }) {
     const [confirmingDeleteId, setConfirmingDeleteId] = useState(null);
     const [deletingId, setDeletingId] = useState(null);
     const [deleteError, setDeleteError] = useState(null);
+
+    const currentShopId = localStorage.getItem("terminal_shop_id");
+
+    const categories =
+        useLiveQuery(async () => {
+            return await db.categories
+                .where("shop_id")
+                .equals(currentShopId)
+                .toArray();
+        }, [currentShopId]) || [];
 
     if (!open) return null;
 
