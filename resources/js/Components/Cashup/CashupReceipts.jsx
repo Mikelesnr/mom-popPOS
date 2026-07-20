@@ -1,6 +1,6 @@
 import React from "react";
 import { ReceiptTemplate } from "../Shared/ReceiptTemplate";
-import { formatShiftDate } from "./helpers";
+import { formatShiftDate, qty } from "./helpers";
 
 // react-to-print clones this node into its own hidden iframe and prints
 // only that — it doesn't matter what layout/nav wraps this page. Kept
@@ -18,6 +18,7 @@ export function CashupReceipts({
     return (
         <div className="fixed -left-[9999px] top-0">
             <div ref={printRef}>
+                {/* SHOP SLIP */}
                 {printTarget?.type === "shop" && (
                     <ReceiptTemplate
                         shopName={data.shop_name}
@@ -29,6 +30,7 @@ export function CashupReceipts({
                     />
                 )}
 
+                {/* STAFF SLIP */}
                 {printTarget?.type === "staff" &&
                     data.summary.totals_by_staff[printTarget.id] && (
                         <ReceiptTemplate
@@ -58,6 +60,23 @@ export function CashupReceipts({
                         />
                     )}
 
+                {/* WASTE LOG SLIP */}
+                {printTarget?.type === "waste" && (
+                    <ReceiptTemplate
+                        shopName={data.shop_name}
+                        title="Waste & Breakage Log"
+                        date={formatShiftDate(data.shift.created_at)}
+                        staff="System"
+                        items={data.shift.waste_logs.map((log) => ({
+                            quantity: qty(log.quantity),
+                            name: `${log.product?.name || "Unknown Item"} (${log.reason})`,
+                            subtotal: 0,
+                        }))}
+                        totals={{}}
+                    />
+                )}
+
+                {/* TABLE BILL */}
                 {printTarget?.type === "table" &&
                     Object.values(data.summary.deferred_tables)
                         .filter((t) => t.id === printTarget.id)
