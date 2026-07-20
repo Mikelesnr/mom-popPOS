@@ -53,6 +53,9 @@ export function useCashupData(propShiftId) {
             );
             return `Bill for ${table?.name || "Table"} ${date}`;
         }
+        if (printTarget.type === "waste") {
+            return `Waste Log - ${data.shop_name} - ${date}`;
+        }
         return "receipt";
     };
 
@@ -198,13 +201,26 @@ export function useCashupData(propShiftId) {
     const productNameLookup = useMemo(() => {
         if (!data) return {};
         const map = {};
+
+        // 1. Existing check: Orders and Tables
         [...(data.shift.orders || []), ...(data.shift.tables || [])].forEach(
             (t) => {
                 (t.items || []).forEach((item) => {
-                    if (!map[item.product_id]) map[item.product_id] = item.name;
+                    if (item.product_id) map[item.product_id] = item.name;
                 });
             },
         );
+
+        // 2. Add this: Check Staff X-Slip transactions as a backup source
+        Object.values(data.summary.totals_by_staff || {}).forEach((s) => {
+            s.transactions.forEach((t) => {
+                (t.items || []).forEach((item) => {
+                    if (item.product_id && !map[item.product_id])
+                        map[item.product_id] = item.name;
+                });
+            });
+        });
+
         return map;
     }, [data]);
 

@@ -158,7 +158,9 @@ export default function Cashup({ shiftId: propShiftId }) {
 
                             <WasteLogsCard
                                 wasteLogs={data.shift.waste_logs}
-                                productNameLookup={productNameLookup}
+                                onPrintWaste={() =>
+                                    setPrintTarget({ type: "waste" })
+                                }
                             />
                         </div>
 

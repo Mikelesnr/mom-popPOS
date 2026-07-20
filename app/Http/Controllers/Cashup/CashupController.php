@@ -20,7 +20,7 @@ class CashupController extends Controller
             'orders.items',
             'tables.user',
             'tables.items',
-            'wasteLogs',
+            'wasteLogs.product',
             'expenses',
         ])
             ->where('id', $shiftId)
