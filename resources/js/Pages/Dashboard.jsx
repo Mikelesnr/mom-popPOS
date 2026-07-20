@@ -12,6 +12,7 @@ import { syncUserToDexie } from "@/Utils/db";
 export default function Dashboard({ auth, shopId, shopType, shops, shift }) {
     console.log(shopType);
     useEffect(() => {
+        console.log(shops);
         // Sync the shops provided by Laravel directly into Dexie
         // This ensures your offline-first logic has the data immediately
         if (shops && shops.length > 0) {
