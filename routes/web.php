@@ -73,6 +73,12 @@ Route::middleware('auth')->group(function () {
     // Register Cashup Sub-Router
     require __DIR__ . '/cashup.php';
 
+    // Register Audit Sub-Router
+    require __DIR__ . '/audit.php';
+
+    //Register License Sub-Router
+    require __DIR__ . '/license.php';
+
 });
 
 require __DIR__ . '/auth.php';

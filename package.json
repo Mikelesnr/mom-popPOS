@@ -29,6 +29,7 @@
         "react-hot-toast": "^2.6.0",
         "react-select": "^5.10.2",
         "react-swipeable": "^7.0.2",
-        "react-to-print": "^3.3.0"
+        "react-to-print": "^3.3.0",
+        "recharts": "^3.10.0"
     }
 }

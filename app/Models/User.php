@@ -94,10 +94,6 @@ class User extends Authenticatable
         return $this->hasMany(Table::class, 'user_id');
     }
 
-    public function shifts(): HasMany
-    {
-        return $this->hasMany(Shift::class, 'user_id');
-    }
     public function wasteLogs(): HasMany
     {
         return $this->hasMany(WasteLog::class, 'user_id');
@@ -111,5 +107,12 @@ class User extends Authenticatable
     public function setPinAttribute($value)
     {
         $this->attributes['pin'] = $value ? Hash::make($value) : null;
+    }
+
+    public function shifts()
+    {
+        return $this->belongsToMany(Shift::class, 'shift_user')
+            ->withPivot('role')
+            ->withTimestamps();
     }
 }

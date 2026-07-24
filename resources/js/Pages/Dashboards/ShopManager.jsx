@@ -9,6 +9,7 @@ import StockCountWorksheet from "@/Components/Stock/StockCountWorksheet";
 import Cashup from "@/Components/Cashup/Cashup";
 import ExpenseManager from "@/Components/Expenses/ExpenseManager";
 import AllTables from "@/Components/Sales/ALLTables";
+import AuditComponent from "@/Components/Audit/AuditComponent";
 
 const NAV_ITEMS = [
     { key: "pos", label: "POS Terminal" },
@@ -20,6 +21,7 @@ const NAV_ITEMS = [
     { key: "stock-count", label: "Stock Count" },
     { key: "cashup", label: "Cashup" },
     { key: "expense", label: "Expenses" },
+    { key: "audit", label: "Audit" },
 ];
 
 export default function ShopManager({ auth }) {
@@ -31,6 +33,9 @@ export default function ShopManager({ auth }) {
     useEffect(() => {
         localStorage.setItem("terminalView", view);
     }, [view]);
+
+    const shopId = localStorage.getItem("terminal_shop_id");
+    console.log("Manager Dash - Found Shop ID:", shopId);
 
     return (
         <div className="min-h-screen bg-stone-50">
@@ -117,6 +122,7 @@ export default function ShopManager({ auth }) {
                 {view === "cashup" && <Cashup />}
                 {view === "expense" && <ExpenseManager />}
                 {view === "tables" && <AllTables />}
+                {view === "audit" && <AuditComponent shopId={shopId} />}
             </div>
         </div>
     );

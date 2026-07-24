@@ -582,11 +582,8 @@ export async function clearSyncedStockAddsLocal(shopId) {
  * This function is called by the Parent Component.
  */
 export async function syncStockAddsToServer(shopId) {
-    // Although technically redundant in the controller, we pass shopId
-    // for consistency with catalogue fetching logs.
     if (!shopId) throw new Error("No active shop ID available for sync.");
 
-    // 1. Fetch ALL pending items globally
     const pending = await getPendingStockAddsLocal();
 
     if (pending.length === 0) {
@@ -595,7 +592,6 @@ export async function syncStockAddsToServer(shopId) {
 
     console.log(`🔄 Syncing ${pending.length} global pending stock adds...`);
 
-    // 2. Prepare payload
     const payload = {
         updates: pending.map((item) => ({
             product_id: item.product_id,
@@ -604,21 +600,31 @@ export async function syncStockAddsToServer(shopId) {
     };
 
     try {
-        // 3. Send to backend
         const response = await window.axios.put(
             route("stock.add-stock"),
             payload,
         );
 
-        // 4. If backend confirms success globally, WIPE the local table.
         if (response.status === 200 || response.status === 207) {
-            // Matches logic of syncStockCountsToServer()
             await db.temp_stock_adds.clear();
             console.log("✅ Stock add sync successful and temp DB cleared.");
         }
         return response.data;
     } catch (err) {
-        console.error("❌ Stock add sync failed:", err);
+        // Here we extract the specific message sent from the Controller
+        if (err.response && err.response.data && err.response.data.error) {
+            console.error(
+                "❌ Stock add sync failed (Server Error):",
+                err.response.data.error,
+            );
+        } else {
+            console.error(
+                "❌ Stock add sync failed (Network/Other):",
+                err.message,
+            );
+        }
+
+        // Re-throw if you need the calling component to handle it too
         throw err;
     }
 }
