@@ -11,6 +11,7 @@ export default function TicketCart({
     setCart,
     activeTable,
     setActiveTable,
+    onPrint,
 }) {
     const [activePaymentContext, setActivePaymentContext] = useState(null);
 
@@ -85,6 +86,14 @@ export default function TicketCart({
                         ? `Editing: ${activeTable.name}`
                         : "Current Ticket"}
                 </h3>
+                {(activeTable || cart.length > 0) && (
+                    <button
+                        onClick={onPrint}
+                        className="text-xs text-indigo-600 font-bold underline"
+                    >
+                        Print
+                    </button>
+                )}
             </div>
 
             {/* Scrollable Cart Items */}
