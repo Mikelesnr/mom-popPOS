@@ -44,11 +44,9 @@ class AuthenticatedSessionController extends Controller
                 'pin' => ['required', 'string', 'size:4'],
             ]);
 
-            // Retrieve all users attached to this storefront
             $users = User::where('shop_id', $request->shop_id)->get();
             $authenticatedUser = null;
 
-            // Loop through and verify against the bcrypt hashed PINs
             foreach ($users as $user) {
                 if ($user->pin && Hash::check($request->pin, $user->pin)) {
                     $authenticatedUser = $user;
@@ -62,11 +60,10 @@ class AuthenticatedSessionController extends Controller
                 ]);
             }
 
-            // Force 'true' for remember state on terminal logins
             Auth::login($authenticatedUser, true);
             $request->session()->regenerate();
 
-            // --- AUTO SHIFT CREATION ---
+            // --- AUTO SHIFT CREATION & REGISTRATION ---
             $shopId = $authenticatedUser->shop_id;
             $currentShift = Shift::where('shop_id', $shopId)
                 ->whereNull('closed_at')
@@ -80,10 +77,12 @@ class AuthenticatedSessionController extends Controller
                 ]);
             }
 
-            // Retrieve the shop relationship to get the type
+            // THE KEY STEP: Register user to the pivot table
+            // This handles "create if missing" OR "add if already active"
+            $currentShift->staff()->syncWithoutDetaching([$authenticatedUser->id]);
+
             $shop = $authenticatedUser->shop;
 
-            // Attach shift_id, shop_id, and shop_type to session
             session([
                 'shift_id' => $currentShift->id,
                 'shop_id' => $shopId,
@@ -93,7 +92,7 @@ class AuthenticatedSessionController extends Controller
             return redirect()->intended(route('dashboard', absolute: false));
         }
 
-        // 2. Fall back to standard Email/Password authentication for Admins/Owners
+        // 2. Fall back to standard Email/Password authentication
         $request->validate([
             'email' => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
@@ -108,9 +107,11 @@ class AuthenticatedSessionController extends Controller
         }
 
         $remember = $request->has('remember') ? $request->boolean('remember') : true;
-
         Auth::login($user, $remember);
         $request->session()->regenerate();
+
+        // OPTIONAL: If you want to track owners/managers logging in via email 
+        // as "staff" on a shift as well, you can add the same sync logic here.
 
         return redirect()->intended(route('dashboard', absolute: false));
     }

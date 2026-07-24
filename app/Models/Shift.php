@@ -54,4 +54,11 @@ class Shift extends Model
     {
         return $this->hasMany(WasteLog::class, 'shift_id');
     }
+
+    public function staff()
+    {
+        return $this->belongsToMany(User::class, 'shift_user')
+            ->withPivot('role')
+            ->withTimestamps();
+    }
 }

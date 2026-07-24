@@ -4,7 +4,7 @@
 ## 1. Executive Metadata & Deployment Constraints
 * **Lead Engineer:** Michael N. Mwanza
 * **Target Region/Context:** SADC Region (Primary operational parity mapping: Harare, Zimbabwe)
-* **Architecture Strategy:** High-Performance Modern Monolith (Laravel 11.x Backend Engine + React Native Client Edge Store)
+* **Architecture Strategy:** High-Performance Modern Monolith (Laravel 13.x Backend Engine + React Native Client Edge Store)
 * **Design Core:** Multi-tenant structural data isolation combined with a strict ledger-first auditing layer.
 * **Offline Resiliency:** Network-agnostic edge state continuity using an embedded client SQLite container.
 
