@@ -108,6 +108,7 @@ export default function AuditComponent({ shopId }) {
             const response = await axios.get("/audit/data", {
                 params: { shopId, ...dateRange },
             });
+            console.log(response.data);
             setAuditData(response.data);
             setSelectedDate(null);
         } catch (error) {
@@ -167,6 +168,38 @@ export default function AuditComponent({ shopId }) {
                         <span>Variance</span>
                         <span className="font-semibold">
                             {money(data.variance)}
+                        </span>
+                    </p>
+                </div>
+            );
+        }
+        return null;
+    };
+
+    const TooltipCostOfSales = ({ active, payload }) => {
+        if (active && payload && payload.length > 0) {
+            const data = payload[0].payload;
+            return (
+                <div className="bg-white p-3 border border-stone-200 shadow-lg text-xs rounded-lg w-64">
+                    <p className="font-bold border-b border-stone-100 pb-1 mb-2 text-stone-800">
+                        {data.date}
+                    </p>
+                    <p className="mb-2 text-stone-500 italic">
+                        Staff:{" "}
+                        {data.staff_names && data.staff_names.length > 0
+                            ? data.staff_names.join(", ")
+                            : "None"}
+                    </p>
+                    <p className="flex justify-between">
+                        <span>COGS % Before</span>
+                        <span className="font-semibold">
+                            {data.cogsPctBefore.toFixed(2)}%
+                        </span>
+                    </p>
+                    <p className="flex justify-between">
+                        <span>COGS % After</span>
+                        <span className="font-semibold text-red-600">
+                            {data.cogsPctAfter.toFixed(2)}%
                         </span>
                     </p>
                 </div>
@@ -331,7 +364,7 @@ export default function AuditComponent({ shopId }) {
                                 />
                                 <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                                 <YAxis unit="%" tick={{ fontSize: 11 }} />
-                                <Tooltip content={<CustomTooltip />} />
+                                <Tooltip content={<TooltipCostOfSales />} />
                                 <Legend wrapperStyle={{ fontSize: 12 }} />
                                 <Bar
                                     dataKey="cogsPctBefore"
@@ -570,7 +603,9 @@ export default function AuditComponent({ shopId }) {
                                                                 }}
                                                             >
                                                                 {money(
-                                                                    item.cost_impact,
+                                                                    item.unit_cost *
+                                                                        -1 *
+                                                                        item.quantity,
                                                                 )}
                                                             </td>
                                                         </tr>
