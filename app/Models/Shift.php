@@ -22,6 +22,11 @@ class Shift extends Model
         'blind_onemoney_reported'
     ];
 
+    protected $casts = [
+        'opened_at' => 'datetime',
+        'closed_at' => 'datetime',
+    ];
+
     public function shop(): BelongsTo
     {
         return $this->belongsTo(Shop::class, 'shop_id');
