@@ -1,9 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useReactToPrint } from "react-to-print";
 import { HISTORY_PAGE_SIZE, formatShiftDate, groupItems } from "./helpers";
+import { getCsrfToken } from "@/Utils/db";
 
-// All stateful logic for the Cashup screen lives here, so CashupContainer.jsx
-// stays focused on layout/composition rather than fetch/print/reconciliation logic.
 export function useCashupData(propShiftId) {
     const [shiftId, setShiftId] = useState(
         () => propShiftId || localStorage.getItem("terminal_shift_id"),
@@ -13,24 +12,15 @@ export function useCashupData(propShiftId) {
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(null);
 
-    const [activeTab, setActiveTab] = useState("current"); // 'current' | 'history'
-
+    const [activeTab, setActiveTab] = useState("current");
     const [history, setHistory] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyLoaded, setHistoryLoaded] = useState(false);
     const [historyPage, setHistoryPage] = useState(1);
 
-    const [counts, setCounts] = useState({
-        blind_cash_reported: "",
-        blind_ecocash_reported: "",
-        blind_swipe_reported: "",
-        blind_onemoney_reported: "",
-    });
     const [isClosing, setIsClosing] = useState(false);
     const [closeError, setCloseError] = useState(null);
 
-    // Which receipt renders into the isolated print node.
-    // { type: 'shop' } | { type: 'staff', id } | { type: 'table', id }
     const [printTarget, setPrintTarget] = useState(null);
     const printRef = useRef(null);
 
@@ -65,7 +55,6 @@ export function useCashupData(propShiftId) {
         onAfterPrint: () => setPrintTarget(null),
     });
 
-    // ---- Load a shift's cashup summary ----
     const loadShift = (id) => {
         if (!id) {
             setLoading(false);
@@ -78,7 +67,7 @@ export function useCashupData(propShiftId) {
             .then((res) => {
                 setData(res);
                 setLoading(false);
-                localStorage.setItem("terminal_shift_id", id);
+                localStorage.setItem("cashup_shift_id", id);
             })
             .catch((err) => {
                 console.error("Failed to load shift data:", err);
@@ -92,7 +81,6 @@ export function useCashupData(propShiftId) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [shiftId]);
 
-    // ---- Load shift history (lazy — only when the History tab is opened) ----
     const loadHistory = () => {
         setHistoryLoading(true);
         fetch(`/cashup/history/all`)
@@ -115,7 +103,6 @@ export function useCashupData(propShiftId) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab]);
 
-    // ---- Print — wait a tick for the targeted receipt to render into printRef, then print ----
     useEffect(() => {
         if (!printTarget) return;
         const timer = setTimeout(() => printReceipt(), 50);
@@ -123,8 +110,10 @@ export function useCashupData(propShiftId) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [printTarget]);
 
-    // ---- Close shift ----
+    // ---- Close shift using system-calculated totals ----
     const handleCloseShift = async () => {
+        if (!data?.summary?.totals_by_method) return;
+
         setIsClosing(true);
         setCloseError(null);
         try {
@@ -136,23 +125,13 @@ export function useCashupData(propShiftId) {
                         'meta[name="csrf-token"]',
                     )?.content,
                 },
+                // Send the exact system totals map
                 body: JSON.stringify({
-                    blind_cash_reported: Number(
-                        counts.blind_cash_reported || 0,
-                    ),
-                    blind_ecocash_reported: Number(
-                        counts.blind_ecocash_reported || 0,
-                    ),
-                    blind_swipe_reported: Number(
-                        counts.blind_swipe_reported || 0,
-                    ),
-                    blind_onemoney_reported: Number(
-                        counts.blind_onemoney_reported || 0,
-                    ),
+                    totals: data.summary.totals_by_method,
                 }),
             });
             if (response.ok) {
-                await loadShift(shiftId); // refresh in place, no full reload
+                await loadShift(shiftId);
             } else {
                 const err = await response.json().catch(() => null);
                 setCloseError(err?.message || "Failed to close shift.");
@@ -165,13 +144,6 @@ export function useCashupData(propShiftId) {
     };
 
     // ---- Derived values ----
-    const shopWideItems = useMemo(() => {
-        if (!data) return [];
-        return Object.values(data.summary.totals_by_staff).flatMap((s) =>
-            s.transactions.flatMap((t) => t.items),
-        );
-    }, [data]);
-
     const shopTotal = useMemo(() => {
         if (!data) return 0;
         return Object.values(data.summary.totals_by_method).reduce(
@@ -193,40 +165,16 @@ export function useCashupData(propShiftId) {
         return Object.values(data.summary.voided_tables || {});
     }, [data]);
 
-    // waste_logs only carries product_id, not a name — build a lookup from
-    // the line items that WERE sold this shift (which do carry names) so we
-    // can label waste entries. Anything wasted that was never sold this
-    // shift won't resolve; that's a genuine data gap on the backend side,
-    // not something fixable client-side.
-    const productNameLookup = useMemo(() => {
-        if (!data) return {};
-        const map = {};
-
-        // 1. Existing check: Orders and Tables
-        [...(data.shift.orders || []), ...(data.shift.tables || [])].forEach(
-            (t) => {
-                (t.items || []).forEach((item) => {
-                    if (item.product_id) map[item.product_id] = item.name;
-                });
-            },
-        );
-
-        // 2. Add this: Check Staff X-Slip transactions as a backup source
-        Object.values(data.summary.totals_by_staff || {}).forEach((s) => {
-            s.transactions.forEach((t) => {
-                (t.items || []).forEach((item) => {
-                    if (item.product_id && !map[item.product_id])
-                        map[item.product_id] = item.name;
-                });
-            });
-        });
-
-        return map;
-    }, [data]);
-
     const groupedShopItems = useMemo(
-        () => groupItems(shopWideItems),
-        [shopWideItems],
+        () =>
+            groupItems(
+                data
+                    ? Object.values(data.summary.totals_by_staff).flatMap((s) =>
+                          s.transactions.flatMap((t) => t.items),
+                      )
+                    : [],
+            ),
+        [data],
     );
 
     const staffItemsByUser = useMemo(() => {
@@ -238,49 +186,64 @@ export function useCashupData(propShiftId) {
         return result;
     }, [data]);
 
-    const isOpen = data ? !data.shift.closed_at : false;
-    const totalHistoryPages = Math.max(
-        1,
-        Math.ceil(history.length / HISTORY_PAGE_SIZE),
-    );
+    const closeTable = async (tableId, paymentData) => {
+        const currentShiftId = localStorage.getItem("terminal_shift_id");
+
+        if (!currentShiftId) {
+            console.error("No active shift ID found in localStorage.");
+            return;
+        }
+
+        try {
+            const response = await fetch(`/cashup/table/${tableId}/close`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRF-TOKEN": getCsrfToken(),
+                },
+                body: JSON.stringify({
+                    method: paymentData.method,
+                    current_shift_id: currentShiftId,
+                }),
+            });
+
+            if (response.ok) {
+                loadShift(shiftId);
+            } else {
+                console.error("Failed to close table server-side");
+            }
+        } catch (e) {
+            console.error("Failed to close table:", e);
+        }
+    };
 
     return {
-        // shift selection / navigation
         shiftId,
         setShiftId,
         activeTab,
+        closeTable,
         setActiveTab,
-
-        // current shift
         data,
         loading,
         loadError,
-        isOpen,
-
-        // history
+        isOpen: data ? !data.shift.closed_at : false,
         history,
         historyLoading,
         historyPage,
         setHistoryPage,
-        totalHistoryPages,
-
-        // blind reconciliation / close shift
-        counts,
-        setCounts,
+        totalHistoryPages: Math.max(
+            1,
+            Math.ceil(history.length / HISTORY_PAGE_SIZE),
+        ),
         isClosing,
         closeError,
         handleCloseShift,
-
-        // print
         printTarget,
         setPrintTarget,
         printRef,
-
-        // derived values
         shopTotal,
         totalExpenses,
         voidedTablesList,
-        productNameLookup,
         groupedShopItems,
         staffItemsByUser,
     };

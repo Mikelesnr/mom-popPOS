@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Inventory;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Unit;
+use App\Models\PaymentMethod;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Str;
@@ -19,9 +20,18 @@ class CategoryController extends Controller
      */
     public function sync(Request $request)
     {
+        $paymentMethods = PaymentMethod::where('is_active', true)->get();
+
         return response()->json([
             'categories' => Category::where('shop_id', $request->user()->shop_id)->get(),
             'units' => Unit::all(),
+            'payment_methods' => $paymentMethods->map(function ($method) {
+                return [
+                    'id' => $method->id,
+                    'name' => $method->name,
+                    'slug' => $method->slug,
+                ];
+            }),
         ]);
     }
 

@@ -16,16 +16,18 @@ class Shift extends Model
         'user_id',
         'opened_at',
         'closed_at',
-        'blind_cash_reported',
-        'blind_ecocash_reported',
-        'blind_swipe_reported',
-        'blind_onemoney_reported'
     ];
 
     protected $casts = [
         'opened_at' => 'datetime',
         'closed_at' => 'datetime',
     ];
+
+    // New relationship to track payments per shift
+    public function payments(): HasMany
+    {
+        return $this->hasMany(ShiftPayment::class, 'shift_id');
+    }
 
     public function shop(): BelongsTo
     {
