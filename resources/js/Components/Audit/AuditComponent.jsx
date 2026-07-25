@@ -23,6 +23,7 @@ import {
     PackageSearch,
     Loader2,
     Lock,
+    X,
 } from "lucide-react";
 import { getCachedPaidStatus, refreshPaidStatus } from "./LicenseStatus";
 
@@ -37,6 +38,33 @@ const COLORS = {
 
 const money = (n) => `$${Number(n || 0).toFixed(2)}`;
 
+// Each row from the API is one closed shift (not one calendar day) — two
+// shifts on the same date (e.g. morning + afternoon) come back as two
+// separate rows. This builds a compact, human-readable label for each one
+// so the charts and tooltips can tell them apart at a glance.
+function shiftLabel(row) {
+    if (!row.opened_at) return row.date;
+    const opened = new Date(row.opened_at);
+    const day = opened.toLocaleDateString(undefined, {
+        day: "2-digit",
+        month: "short",
+    });
+    const time = opened.toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+    });
+    return `${day}, ${time}`;
+}
+
+function shiftTimeRange(row) {
+    if (!row.opened_at) return "";
+    const opened = new Date(row.opened_at);
+    const closed = row.closed_at ? new Date(row.closed_at) : null;
+    const fmt = (d) =>
+        d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return closed ? `${fmt(opened)} – ${fmt(closed)}` : fmt(opened);
+}
+
 export default function AuditComponent({ shopId }) {
     const today = new Date();
     const lastWeek = new Date();
@@ -49,7 +77,7 @@ export default function AuditComponent({ shopId }) {
 
     const [loading, setLoading] = useState(false);
     const [auditData, setAuditData] = useState([]);
-    const [selectedDate, setSelectedDate] = useState(null);
+    const [selectedShiftId, setSelectedShiftId] = useState(null);
     const [isPaid, setIsPaid] = useState(getCachedPaidStatus());
 
     // Refresh the cached flag whenever this page is opened, so a device that's
@@ -110,7 +138,7 @@ export default function AuditComponent({ shopId }) {
             });
             console.log(response.data);
             setAuditData(response.data);
-            setSelectedDate(null);
+            setSelectedShiftId(null);
         } catch (error) {
             console.error("Audit Fetch Error:", error);
         } finally {
@@ -118,6 +146,18 @@ export default function AuditComponent({ shopId }) {
         }
     };
 
+    // Chart-ready data — same rows as auditData, with a display label added
+    // for the X axis and tooltips.
+    const chartData = useMemo(
+        () =>
+            auditData.map((d) => ({
+                ...d,
+                label: shiftLabel(d),
+            })),
+        [auditData],
+    );
+
+    // ---- Period totals (always visible, regardless of selection) ----
     const totals = useMemo(() => {
         const totalSales = auditData.reduce((a, d) => a + d.sales, 0);
         const totalVariance = auditData.reduce((a, d) => a + d.variance, 0);
@@ -129,13 +169,17 @@ export default function AuditComponent({ shopId }) {
         return { totalSales, totalVariance, avgCogsAfter };
     }, [auditData]);
 
-    const selectedDay = useMemo(
-        () => auditData.find((d) => d.date === selectedDate) || null,
-        [auditData, selectedDate],
+    // ---- The single shift currently selected via a chart click ----
+    const selectedShift = useMemo(
+        () => auditData.find((d) => d.shift_id === selectedShiftId) || null,
+        [auditData, selectedShiftId],
     );
 
-    const handleBarClick = (e) => {
-        if (e && e.activeLabel) setSelectedDate(e.activeLabel);
+    const handleBarClick = (data) => {
+        // When clicking the Bar, 'data' is the object representing the clicked item
+        if (data && data.shift_id) {
+            setSelectedShiftId(data.shift_id);
+        }
     };
 
     const CustomTooltip = ({ active, payload }) => {
@@ -144,7 +188,7 @@ export default function AuditComponent({ shopId }) {
             return (
                 <div className="bg-white p-3 border border-stone-200 shadow-lg text-xs rounded-lg w-64">
                     <p className="font-bold border-b border-stone-100 pb-1 mb-2 text-stone-800">
-                        {data.date}
+                        {data.label}
                     </p>
                     <p className="mb-2 text-stone-500 italic">
                         Staff:{" "}
@@ -182,7 +226,7 @@ export default function AuditComponent({ shopId }) {
             return (
                 <div className="bg-white p-3 border border-stone-200 shadow-lg text-xs rounded-lg w-64">
                     <p className="font-bold border-b border-stone-100 pb-1 mb-2 text-stone-800">
-                        {data.date}
+                        {data.label}
                     </p>
                     <p className="mb-2 text-stone-500 italic">
                         Staff:{" "}
@@ -224,7 +268,8 @@ export default function AuditComponent({ shopId }) {
                         Audit Dashboard
                     </h2>
                     <p className="text-xs text-stone-500 mt-0.5">
-                        Sales, cost of goods, and stock variance over time
+                        Sales, cost of goods, and stock variance — one bar per
+                        shift
                     </p>
                 </div>
 
@@ -263,106 +308,174 @@ export default function AuditComponent({ shopId }) {
                 </div>
             ) : auditData.length === 0 ? (
                 <div className="text-sm text-stone-500 py-12 text-center">
-                    No data for this date range.
+                    No closed shifts for this date range.
                 </div>
             ) : (
                 <>
-                    {/* KPI cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="bg-white rounded-lg border border-stone-200 p-4 flex items-center gap-3">
-                            <div
-                                className="p-2 rounded-md"
-                                style={{ backgroundColor: "#eef7f1" }}
-                            >
-                                <DollarSign
-                                    size={18}
-                                    style={{ color: COLORS.forest }}
-                                />
+                    {/* ---- PERIOD TOTALS (always shown, across every shift in range) ---- */}
+                    <div>
+                        <h3 className="text-xs font-bold text-stone-500 uppercase tracking-wide mb-2">
+                            Period Totals — {dateRange.startDate} to{" "}
+                            {dateRange.endDate}
+                        </h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="bg-white rounded-lg border border-stone-200 p-4 flex items-center gap-3">
+                                <div
+                                    className="p-2 rounded-md"
+                                    style={{ backgroundColor: "#eef7f1" }}
+                                >
+                                    <DollarSign
+                                        size={18}
+                                        style={{ color: COLORS.forest }}
+                                    />
+                                </div>
+                                <div>
+                                    <p className="text-xs text-stone-500">
+                                        Total Sales
+                                    </p>
+                                    <p className="text-lg font-bold text-stone-800">
+                                        {money(totals.totalSales)}
+                                    </p>
+                                </div>
                             </div>
-                            <div>
-                                <p className="text-xs text-stone-500">
-                                    Total Sales
-                                </p>
-                                <p className="text-lg font-bold text-stone-800">
-                                    {money(totals.totalSales)}
-                                </p>
-                            </div>
-                        </div>
 
-                        <div className="bg-white rounded-lg border border-stone-200 p-4 flex items-center gap-3">
-                            <div
-                                className="p-2 rounded-md"
-                                style={{
-                                    backgroundColor:
-                                        totals.totalVariance < 0
-                                            ? "#fdecea"
-                                            : "#eef7f1",
-                                }}
-                            >
-                                <AlertTriangle
-                                    size={18}
+                            <div className="bg-white rounded-lg border border-stone-200 p-4 flex items-center gap-3">
+                                <div
+                                    className="p-2 rounded-md"
                                     style={{
-                                        color:
+                                        backgroundColor:
                                             totals.totalVariance < 0
-                                                ? COLORS.red
-                                                : COLORS.forest,
-                                    }}
-                                />
-                            </div>
-                            <div>
-                                <p className="text-xs text-stone-500">
-                                    Net Variance
-                                </p>
-                                <p
-                                    className="text-lg font-bold"
-                                    style={{
-                                        color:
-                                            totals.totalVariance < 0
-                                                ? COLORS.red
-                                                : COLORS.forest,
+                                                ? "#fdecea"
+                                                : "#eef7f1",
                                     }}
                                 >
-                                    {money(totals.totalVariance)}
-                                </p>
+                                    <AlertTriangle
+                                        size={18}
+                                        style={{
+                                            color:
+                                                totals.totalVariance < 0
+                                                    ? COLORS.red
+                                                    : COLORS.forest,
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <p className="text-xs text-stone-500">
+                                        Total Variance
+                                    </p>
+                                    <p
+                                        className="text-lg font-bold"
+                                        style={{
+                                            color:
+                                                totals.totalVariance < 0
+                                                    ? COLORS.red
+                                                    : COLORS.forest,
+                                        }}
+                                    >
+                                        {money(totals.totalVariance)}
+                                    </p>
+                                </div>
                             </div>
-                        </div>
 
-                        <div className="bg-white rounded-lg border border-stone-200 p-4 flex items-center gap-3">
-                            <div
-                                className="p-2 rounded-md"
-                                style={{ backgroundColor: "#fdf6e3" }}
-                            >
-                                <TrendingUp
-                                    size={18}
-                                    style={{ color: COLORS.gold }}
-                                />
-                            </div>
-                            <div>
-                                <p className="text-xs text-stone-500">
-                                    Avg COGS % (After)
-                                </p>
-                                <p className="text-lg font-bold text-stone-800">
-                                    {totals.avgCogsAfter.toFixed(1)}%
-                                </p>
+                            <div className="bg-white rounded-lg border border-stone-200 p-4 flex items-center gap-3">
+                                <div
+                                    className="p-2 rounded-md"
+                                    style={{ backgroundColor: "#fdf6e3" }}
+                                >
+                                    <TrendingUp
+                                        size={18}
+                                        style={{ color: COLORS.gold }}
+                                    />
+                                </div>
+                                <div>
+                                    <p className="text-xs text-stone-500">
+                                        Avg Cost of Sales % (After)
+                                    </p>
+                                    <p className="text-lg font-bold text-stone-800">
+                                        {totals.avgCogsAfter.toFixed(1)}%
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>
 
+                    {/* ---- SELECTED SHIFT TOTALS (appears once a bar is clicked) ---- */}
+                    {selectedShift && (
+                        <div>
+                            <div className="flex items-center justify-between mb-2">
+                                <h3 className="text-xs font-bold text-stone-500 uppercase tracking-wide">
+                                    Selected Shift — {shiftLabel(selectedShift)}{" "}
+                                    ({shiftTimeRange(selectedShift)})
+                                </h3>
+                                <button
+                                    onClick={() => setSelectedShiftId(null)}
+                                    className="text-xs text-stone-400 hover:text-stone-700 flex items-center gap-1"
+                                >
+                                    <X size={12} />
+                                    Clear
+                                </button>
+                            </div>
+                            <div
+                                className="grid grid-cols-1 sm:grid-cols-3 gap-4 rounded-lg p-4"
+                                style={{
+                                    backgroundColor: "#fdf6e3",
+                                    border: `1px solid ${COLORS.gold}`,
+                                }}
+                            >
+                                <div>
+                                    <p className="text-xs text-stone-500">
+                                        Shift Sales
+                                    </p>
+                                    <p className="text-lg font-bold text-stone-800">
+                                        {money(selectedShift.sales)}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-stone-500">
+                                        Shift Net Variance
+                                    </p>
+                                    <p
+                                        className="text-lg font-bold"
+                                        style={{
+                                            color:
+                                                selectedShift.variance < 0
+                                                    ? COLORS.red
+                                                    : COLORS.forest,
+                                        }}
+                                    >
+                                        {money(selectedShift.variance)}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-stone-500">
+                                        Shift Cost of Sales % (After)
+                                    </p>
+                                    <p className="text-lg font-bold text-stone-800">
+                                        {selectedShift.cogsPctAfter.toFixed(1)}%
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* 1. COGS Chart */}
                     <div className="h-64 bg-white border border-stone-200 p-4 rounded-lg">
                         <h3 className="text-sm font-bold mb-2 text-stone-700">
-                            Cost of Sales %
+                            Cost of Sales % by Shift
                         </h3>
                         <ResponsiveContainer width="100%" height="100%">
                             <ComposedChart
-                                data={auditData}
+                                data={chartData}
                                 onClick={handleBarClick}
                             >
                                 <CartesianGrid
                                     strokeDasharray="3 3"
                                     stroke="#f0ebe1"
                                 />
-                                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                                <XAxis
+                                    dataKey="label"
+                                    tick={{ fontSize: 11 }}
+                                />
                                 <YAxis unit="%" tick={{ fontSize: 11 }} />
                                 <Tooltip content={<TooltipCostOfSales />} />
                                 <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -372,6 +485,7 @@ export default function AuditComponent({ shopId }) {
                                     fill={COLORS.slate}
                                     radius={[3, 3, 0, 0]}
                                     cursor="pointer"
+                                    onClick={handleBarClick}
                                 />
                                 <Line
                                     type="monotone"
@@ -388,15 +502,18 @@ export default function AuditComponent({ shopId }) {
                     {/* 2. Total Sales Chart */}
                     <div className="h-64 bg-white border border-stone-200 p-4 rounded-lg">
                         <h3 className="text-sm font-bold mb-2 text-stone-700">
-                            Total Sales ($)
+                            Sales by Shift ($)
                         </h3>
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={auditData} onClick={handleBarClick}>
+                            <BarChart data={chartData} onClick={handleBarClick}>
                                 <CartesianGrid
                                     strokeDasharray="3 3"
                                     stroke="#f0ebe1"
                                 />
-                                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                                <XAxis
+                                    dataKey="label"
+                                    tick={{ fontSize: 11 }}
+                                />
                                 <YAxis tick={{ fontSize: 11 }} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <Bar
@@ -405,17 +522,18 @@ export default function AuditComponent({ shopId }) {
                                     fill={COLORS.forest}
                                     radius={[3, 3, 0, 0]}
                                     cursor="pointer"
+                                    onClick={handleBarClick}
                                 >
-                                    {auditData.map((d, i) => (
+                                    {chartData.map((d, i) => (
                                         <Cell
                                             key={i}
                                             fillOpacity={
-                                                selectedDate === d.date
+                                                selectedShiftId === d.shift_id
                                                     ? 1
                                                     : 0.85
                                             }
                                             stroke={
-                                                selectedDate === d.date
+                                                selectedShiftId === d.shift_id
                                                     ? COLORS.gold
                                                     : "none"
                                             }
@@ -430,15 +548,18 @@ export default function AuditComponent({ shopId }) {
                     {/* 3. Variance Chart */}
                     <div className="h-64 bg-white border border-stone-200 p-4 rounded-lg">
                         <h3 className="text-sm font-bold mb-2 text-stone-700">
-                            Daily Variance ($)
+                            Variance by Shift ($)
                         </h3>
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={auditData} onClick={handleBarClick}>
+                            <BarChart data={chartData} onClick={handleBarClick}>
                                 <CartesianGrid
                                     strokeDasharray="3 3"
                                     stroke="#f0ebe1"
                                 />
-                                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                                <XAxis
+                                    dataKey="label"
+                                    tick={{ fontSize: 11 }}
+                                />
                                 <YAxis tick={{ fontSize: 11 }} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <Bar
@@ -446,8 +567,9 @@ export default function AuditComponent({ shopId }) {
                                     name="Variance"
                                     radius={[3, 3, 0, 0]}
                                     cursor="pointer"
+                                    onClick={handleBarClick}
                                 >
-                                    {auditData.map((d, i) => (
+                                    {chartData.map((d, i) => (
                                         <Cell
                                             key={i}
                                             fill={
@@ -456,12 +578,12 @@ export default function AuditComponent({ shopId }) {
                                                     : COLORS.forest
                                             }
                                             fillOpacity={
-                                                selectedDate === d.date
+                                                selectedShiftId === d.shift_id
                                                     ? 1
                                                     : 0.85
                                             }
                                             stroke={
-                                                selectedDate === d.date
+                                                selectedShiftId === d.shift_id
                                                     ? COLORS.gold
                                                     : "none"
                                             }
@@ -473,34 +595,43 @@ export default function AuditComponent({ shopId }) {
                         </ResponsiveContainer>
                     </div>
 
-                    {/* Drill-down: staff + itemized variances for the selected day */}
-                    {selectedDay && (
+                    {/* Drill-down: staff + itemized variances for the selected shift */}
+                    {selectedShift && (
                         <div className="bg-white border border-stone-200 rounded-lg overflow-hidden">
                             <div
-                                className="px-4 py-3 flex items-center justify-between"
+                                className="px-4 py-3 flex items-center justify-between flex-wrap gap-2"
                                 style={{ backgroundColor: "#fdf6e3" }}
                             >
                                 <h3 className="font-bold text-stone-800">
-                                    Breakdown for {selectedDay.date}
+                                    Breakdown for {shiftLabel(selectedShift)}
                                 </h3>
                                 <div className="flex gap-4 text-sm">
                                     <span className="text-stone-600">
                                         Sales:{" "}
                                         <strong>
-                                            {money(selectedDay.sales)}
+                                            {money(selectedShift.sales)}
                                         </strong>
                                     </span>
                                     <span
                                         style={{
                                             color:
-                                                selectedDay.variance < 0
+                                                selectedShift.variance < 0
                                                     ? COLORS.red
                                                     : COLORS.forest,
                                         }}
                                     >
                                         Variance:{" "}
                                         <strong>
-                                            {money(selectedDay.variance)}
+                                            {money(selectedShift.variance)}
+                                        </strong>
+                                    </span>
+                                    <span className="text-stone-600">
+                                        COGS % After:{" "}
+                                        <strong>
+                                            {selectedShift.cogsPctAfter.toFixed(
+                                                1,
+                                            )}
+                                            %
                                         </strong>
                                     </span>
                                 </div>
@@ -512,8 +643,8 @@ export default function AuditComponent({ shopId }) {
                                 <span className="text-xs text-stone-500 mr-1">
                                     Staff on duty:
                                 </span>
-                                {selectedDay.staff_names.length > 0 ? (
-                                    selectedDay.staff_names.map((name) => (
+                                {selectedShift.staff_names.length > 0 ? (
+                                    selectedShift.staff_names.map((name) => (
                                         <span
                                             key={name}
                                             className="text-xs bg-stone-100 text-stone-700 px-2 py-0.5 rounded-full"
@@ -534,10 +665,10 @@ export default function AuditComponent({ shopId }) {
                                     Stock Variances — What's Missing / Excess
                                 </h4>
 
-                                {selectedDay.variance_items.length === 0 ? (
+                                {selectedShift.variance_items.length === 0 ? (
                                     <p className="text-sm text-stone-400 italic py-4 text-center">
                                         No stock variances recorded for this
-                                        day.
+                                        shift.
                                     </p>
                                 ) : (
                                     <table className="w-full text-sm">
@@ -558,7 +689,7 @@ export default function AuditComponent({ shopId }) {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {selectedDay.variance_items.map(
+                                            {selectedShift.variance_items.map(
                                                 (item) => {
                                                     const isShortage =
                                                         item.quantity < 0;
@@ -625,14 +756,14 @@ export default function AuditComponent({ shopId }) {
                                                     className="py-2 pl-2 text-right font-bold"
                                                     style={{
                                                         color:
-                                                            selectedDay.variance <
+                                                            selectedShift.variance <
                                                             0
                                                                 ? COLORS.red
                                                                 : COLORS.forest,
                                                     }}
                                                 >
                                                     {money(
-                                                        selectedDay.variance,
+                                                        selectedShift.variance,
                                                     )}
                                                 </td>
                                             </tr>
