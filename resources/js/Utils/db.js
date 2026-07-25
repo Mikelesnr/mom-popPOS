@@ -9,7 +9,7 @@ export const db = new Dexie("MomnPopPWA");
  * 1. Added 'metadata.type' index to order_items for fast report generation.
  * 2. Standardized indexes across all stores.
  */
-db.version(10).stores({
+db.version(11).stores({
     catalogs: "shop_id",
     orders: "id, shop_id, shift_id, user_id, status, created_at, synced_at",
     open_tables:
@@ -22,7 +22,15 @@ db.version(10).stores({
     shops: "id, name, shop_type",
     shop_owners: "id, shop_id, user_id",
     users: "id, name, role",
+    payment_methods: "id, name, slug",
 });
+
+/**
+ * Retrieve all payment methods stored in Dexie.
+ */
+export const getPaymentMethodsLocal = async () => {
+    return await db.payment_methods.toArray();
+};
 
 /**
  * Dumps the entire owner's portfolio into Dexie.
@@ -165,7 +173,7 @@ export const saveOrderItemLocal = async (itemData) => {
 /**
  * Helper to safely get CSRF Token
  */
-const getCsrfToken = () => {
+export const getCsrfToken = () => {
     const meta = document.querySelector('meta[name="csrf-token"]');
     return meta ? meta.content : "";
 };
@@ -271,13 +279,19 @@ export const syncTablesToServer = async () => {
     // 1. Get current shop context
     const currentShopId = localStorage.getItem("terminal_shop_id");
 
-    // 2. Filter tables by shop_id and synced status
+    // 2. Filter tables by shop_id, synced status, AND ensure status is NOT 'open'
     const tablesToSync = await db.open_tables
-        .filter((t) => t.synced_at == null && t.shop_id === currentShopId)
+        .filter(
+            (t) =>
+                t.synced_at == null &&
+                t.shop_id === currentShopId &&
+                t.status !== "open", // <--- EXCLUDE OPEN TABLES HERE
+        )
         .toArray();
 
     if (tablesToSync.length === 0) return;
 
+    // ... rest of your sync logic
     const response = await fetch("/sales/sync-tables", {
         method: "POST",
         headers: {
@@ -380,7 +394,25 @@ export const syncInventoryLocal = async () => {
             console.log(`✅ Saved ${data.units.length} units locally`);
         }
 
-        return { categories: data.categories, units: data.units };
+        // 3. Save payment methods (NEW)
+        if (data.payment_methods?.length > 0) {
+            await db.payment_methods.bulkPut(
+                data.payment_methods.map((p) => ({
+                    id: p.id,
+                    name: p.name,
+                    slug: p.slug,
+                })),
+            );
+            console.log(
+                `✅ Saved ${data.payment_methods.length} payment methods locally`,
+            );
+        }
+
+        return {
+            categories: data.categories,
+            units: data.units,
+            payment_methods: data.payment_methods,
+        };
     } catch (err) {
         console.error("❌ Inventory sync failed:", err);
         throw err;

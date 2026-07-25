@@ -13,6 +13,8 @@ import { ShiftHistoryCard } from "./ShiftHistoryCard";
 import { CashupReceipts } from "./CashupReceipts";
 
 export default function Cashup({ shiftId: propShiftId }) {
+    const currentShiftId = localStorage.getItem("terminal_shift_id");
+
     const {
         setShiftId,
         activeTab,
@@ -28,16 +30,17 @@ export default function Cashup({ shiftId: propShiftId }) {
         totalHistoryPages,
         counts,
         setCounts,
+        productNameLookup,
         isClosing,
         closeError,
         handleCloseShift,
+        closeTable,
         printTarget,
         setPrintTarget,
         printRef,
         shopTotal,
         totalExpenses,
         voidedTablesList,
-        productNameLookup,
         groupedShopItems,
         staffItemsByUser,
     } = useCashupData(propShiftId);
@@ -45,8 +48,6 @@ export default function Cashup({ shiftId: propShiftId }) {
     return (
         <div className="min-h-screen bg-stone-50">
             <Head title={data ? `Cashup - ${data.shop_name}` : "Cashup"} />
-
-            {/* ============ SCREEN UI (hidden entirely when printing) ============ */}
             <div className="print:hidden">
                 {/* Header */}
                 <header className="bg-[#14352E] text-stone-50 px-6 py-6 flex items-center justify-between">
@@ -79,8 +80,18 @@ export default function Cashup({ shiftId: propShiftId }) {
                 {/* Tabs */}
                 <div className="px-6 pt-5">
                     <div className="inline-flex rounded-lg border border-stone-200 bg-white p-1">
+                        {/* UPDATED: Clicking 'Current' now resets the shiftId to the active one */}
                         <button
-                            onClick={() => setActiveTab("current")}
+                            onClick={() => {
+                                if (currentShiftId) {
+                                    setShiftId(currentShiftId);
+                                } else {
+                                    toast.error(
+                                        "No current shift found in local storage",
+                                    );
+                                }
+                                setActiveTab("current");
+                            }}
                             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                                 activeTab === "current"
                                     ? "bg-[#14352E] text-white"
@@ -89,6 +100,7 @@ export default function Cashup({ shiftId: propShiftId }) {
                         >
                             Current Shift
                         </button>
+
                         <button
                             onClick={() => setActiveTab("history")}
                             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -102,7 +114,7 @@ export default function Cashup({ shiftId: propShiftId }) {
                     </div>
                 </div>
 
-                {/* ---- Current Shift ---- */}
+                {/* ---- Current Shift States ---- */}
                 {activeTab === "current" && loading && (
                     <div className="p-10 text-center text-stone-500">
                         Loading cashup session…
@@ -131,7 +143,6 @@ export default function Cashup({ shiftId: propShiftId }) {
 
                 {activeTab === "current" && !loading && !loadError && data && (
                     <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* LEFT column: shop totals + reconciliation + expenses/waste */}
                         <div className="lg:col-span-1 space-y-6">
                             <ShopTotalsCard
                                 data={data}
@@ -140,7 +151,6 @@ export default function Cashup({ shiftId: propShiftId }) {
                                     setPrintTarget({ type: "shop" })
                                 }
                             />
-
                             <BlindReconciliationCard
                                 data={data}
                                 isOpen={isOpen}
@@ -150,12 +160,10 @@ export default function Cashup({ shiftId: propShiftId }) {
                                 isClosing={isClosing}
                                 onCloseShift={handleCloseShift}
                             />
-
                             <ExpensesCard
                                 expenses={data.shift.expenses}
                                 totalExpenses={totalExpenses}
                             />
-
                             <WasteLogsCard
                                 wasteLogs={data.shift.waste_logs}
                                 onPrintWaste={() =>
@@ -163,8 +171,6 @@ export default function Cashup({ shiftId: propShiftId }) {
                                 }
                             />
                         </div>
-
-                        {/* RIGHT column: staff X-slips + deferred/voided tables */}
                         <div className="lg:col-span-2 space-y-6">
                             <StaffXSlipsCard
                                 totalsByStaff={data.summary.totals_by_staff}
@@ -178,13 +184,16 @@ export default function Cashup({ shiftId: propShiftId }) {
                             />
 
                             <UnpaidTablesCard
-                                deferredTables={data.summary.deferred_tables}
+                                deferredTables={
+                                    data.summary?.deferred_tables || []
+                                }
                                 onPrintTable={(tableId) =>
                                     setPrintTarget({
                                         type: "table",
                                         id: tableId,
                                     })
                                 }
+                                onCloseTable={closeTable}
                             />
 
                             <VoidedTablesCard

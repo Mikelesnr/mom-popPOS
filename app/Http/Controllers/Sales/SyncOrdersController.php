@@ -117,7 +117,6 @@ class SyncOrdersController extends Controller
         // 1. Extract Metadata Type from payload
         $rawMetadata = $itemData['metadata'] ?? [];
         $metadata = is_array($rawMetadata) ? $rawMetadata : [];
-        // Fallback to 'unit' if type is missing in metadata
         $typeValue = $metadata['type'] ?? (is_string($rawMetadata) ? $rawMetadata : 'unit');
 
         // 2. Prepare attributes for OrderItem
@@ -130,22 +129,31 @@ class SyncOrdersController extends Controller
             'quantity' => $itemData['quantity'] ?? 0,
             'unit_price' => $itemData['unit_price'] ?? 0,
             'subtotal' => $itemData['subtotal'] ?? 0,
-            'metadata' => $typeValue, // Save the simplified type string
+            'metadata' => $typeValue,
         ];
 
         try {
-            // a. Save/Update the OrderItem
-            // This runs inside the main DB::transaction initialized in syncOrders/syncTables.
             $orderItem = OrderItem::updateOrCreate(['id' => $attributes['id']], $attributes);
 
-            // b. ROUTE STOCK DEDUCTION (Only if product exists)
-            if ($orderItem->product_id) {
+            // Determine if we should route to deduction
+            $shouldDeduct = true;
+
+            if ($parentType === Table::class) {
+                $parent = Table::find($parentId);
+                // We keep this status check, but without the verbose logging
+                if ($parent && $parent->status->value === 'void') {
+                    $shouldDeduct = false;
+                }
+            }
+
+            // Only deduct if valid
+            if ($shouldDeduct && $orderItem->product_id) {
                 $this->routeDeduction($orderItem, $typeValue);
             }
 
         } catch (\Exception $e) {
+            // Keep error logs for production visibility!
             Log::error("Failed to save/deduct item {$attributes['id']}: " . $e->getMessage());
-            // Re-throw to trigger transaction rollback in the main sync method
             throw $e;
         }
     }

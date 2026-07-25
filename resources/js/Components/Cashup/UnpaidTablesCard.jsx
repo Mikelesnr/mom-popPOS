@@ -1,12 +1,19 @@
-import React from "react";
+import React, { useState } from "react";
 import { money } from "./helpers";
+import PaymentSelectionModal from "../Sales/PaymentSelectionModal"; // Adjust path as needed
 
-export function UnpaidTablesCard({ deferredTables, onPrintTable }) {
+export function UnpaidTablesCard({
+    deferredTables,
+    onPrintTable,
+    onCloseTable,
+}) {
+    const [activeTable, setActiveTable] = useState(null);
     const tables = Object.values(deferredTables);
 
     return (
         <section className="bg-white p-5 rounded-lg border border-stone-200 shadow-sm">
             <h2 className="font-bold text-stone-900 mb-4">Unpaid Tables</h2>
+
             {tables.length === 0 ? (
                 <p className="text-sm text-stone-500">
                     No unpaid tables on this shift.
@@ -29,15 +36,34 @@ export function UnpaidTablesCard({ deferredTables, onPrintTable }) {
                                     </span>
                                 </p>
                             </div>
-                            <button
-                                onClick={() => onPrintTable(table.id)}
-                                className="shrink-0 text-[#14352E] font-medium underline underline-offset-2 text-sm"
-                            >
-                                Print Receipt
-                            </button>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => onPrintTable(table.id)}
+                                    className="text-stone-400 hover:text-stone-600 underline text-sm"
+                                >
+                                    Print
+                                </button>
+                                <button
+                                    onClick={() => setActiveTable(table)}
+                                    className="bg-[#14352E] text-white px-3 py-1 rounded text-sm font-semibold"
+                                >
+                                    Close Table
+                                </button>
+                            </div>
                         </div>
                     ))}
                 </div>
+            )}
+
+            {activeTable && (
+                <PaymentSelectionModal
+                    totalAmount={parseFloat(activeTable.total_amount)}
+                    onCancel={() => setActiveTable(null)}
+                    onSelect={(paymentData) => {
+                        onCloseTable(activeTable.id, paymentData);
+                        setActiveTable(null);
+                    }}
+                />
             )}
         </section>
     );

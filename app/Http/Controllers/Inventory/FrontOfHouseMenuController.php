@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Inventory;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\CategoryMenuResource;
 use App\Models\Category;
+use App\Models\PaymentMethod;
 use App\Models\ShotSize;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -38,6 +39,9 @@ class FrontOfHouseMenuController extends Controller
         // 2. Fetch all standard shot-pour configurations for this shop
         $shotSizes = ShotSize::where('shop_id', $shopId)->get();
 
+        // 3. Fetch active payment methods
+        $paymentMethods = PaymentMethod::where('is_active', true)->get();
+
         return response()->json([
             'shop_id' => $shopId,
             'synced_at' => now()->toIso8601String(),
@@ -46,6 +50,13 @@ class FrontOfHouseMenuController extends Controller
                 return [
                     'id' => $shot->id,
                     'size_ml' => $shot->size_ml,
+                ];
+            }),
+            'payment_methods' => $paymentMethods->map(function ($method) {
+                return [
+                    'id' => $method->id,
+                    'name' => $method->name,
+                    'slug' => $method->slug,
                 ];
             }),
         ]);

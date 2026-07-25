@@ -3,20 +3,36 @@ import { X, CircleDollarSign, Keyboard } from "lucide-react";
 // Assumes NumericKeypad and CustomDropdown are in the folders indicated
 import { NumericKeypad } from "@/Components/Shared/NumericKeypad";
 import CustomDropdown from "@/Components/Shared/CustomDropdown";
+import { getPaymentMethodsLocal } from "@/Utils/db";
 
 export default function PaymentSelectionModal({
     totalAmount,
     onSelect,
     onCancel,
 }) {
-    const methods = ["cash", "card", "ecocash", "onemoney", "inbucks", "omari"];
+    const [methods, setMethods] = useState([]);
     const [selectedMethod, setSelectedMethod] = useState("cash");
 
     // Map methods for the custom dropdown
-    const methodOptions = methods.map((m) => ({
-        label: m.toUpperCase(),
-        value: m,
-    }));
+    const methodOptions = useMemo(() => {
+        return methods.map((m) => ({
+            label: m.name.toUpperCase(),
+            value: m.slug,
+        }));
+    }, [methods]);
+
+    useEffect(() => {
+        const fetchMethods = async () => {
+            const data = await getPaymentMethodsLocal();
+            setMethods(data);
+
+            // Set default to the first method if available
+            if (data.length > 0) {
+                setSelectedMethod(data[0].slug);
+            }
+        };
+        fetchMethods();
+    }, []);
 
     // Cash entry state
     const [amountTendered, setAmountTendered] = useState(totalAmount);

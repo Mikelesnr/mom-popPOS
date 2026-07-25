@@ -1,82 +1,80 @@
 import React from "react";
-import { BLIND_FIELDS, formatShiftDate, money } from "./helpers";
+import { money } from "./helpers";
 
 export function BlindReconciliationCard({
     data,
     isOpen,
-    counts,
-    setCounts,
-    closeError,
     isClosing,
+    closeError,
     onCloseShift,
 }) {
+    // 1. Determine which totals to display:
+    // If closed, use the saved ShiftPayment records.
+    // If open, use the system-calculated summary.
+    const displayTotals = isOpen
+        ? Object.entries(data?.summary?.totals_by_method || {})
+        : (data?.shift?.payments || []).map((p) => [
+              p.payment_method.name,
+              p.amount,
+          ]);
+
+    const grandTotal = isOpen
+        ? Object.values(data?.summary?.totals_by_method || {}).reduce(
+              (a, b) => a + Number(b),
+              0,
+          )
+        : (data?.shift?.payments || []).reduce(
+              (a, p) => a + Number(p.amount),
+              0,
+          );
+
     return (
         <section className="bg-white p-5 rounded-lg border border-stone-200 shadow-sm">
             <h2 className="font-bold text-stone-900 mb-1">
-                Blind Cashup Reconciliation
+                {isOpen ? "Shift Reconciliation" : "Finalized Reconciliation"}
             </h2>
             <p className="text-xs text-stone-500 mb-4">
-                Count the till and wallets first — system totals stay hidden
-                until you submit.
+                {isOpen
+                    ? "Verify system totals to finalize."
+                    : "Recorded payments for this shift."}
             </p>
 
-            {isOpen ? (
-                <>
-                    <div className="space-y-3">
-                        {BLIND_FIELDS.map(([field, label]) => (
-                            <div key={field}>
-                                <label className="block text-sm font-medium text-stone-700 mb-1">
-                                    {label}
-                                </label>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    inputMode="decimal"
-                                    placeholder="0.00"
-                                    className="w-full border border-stone-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-[#14352E]/40 focus:border-[#14352E]"
-                                    value={counts[field]}
-                                    onChange={(e) =>
-                                        setCounts({
-                                            ...counts,
-                                            [field]: e.target.value,
-                                        })
-                                    }
-                                />
-                            </div>
-                        ))}
+            <div className="space-y-2 font-mono text-sm">
+                {displayTotals.map(([method, amount], index) => (
+                    <div
+                        key={index}
+                        className="flex justify-between border-b border-stone-100 py-1"
+                    >
+                        <span className="capitalize text-stone-600 font-sans">
+                            {method}
+                        </span>
+                        <span className="font-semibold text-stone-900">
+                            {money(amount)}
+                        </span>
                     </div>
+                ))}
 
+                <div className="flex justify-between pt-3 border-t border-stone-200 font-bold">
+                    <span className="text-stone-800">Total</span>
+                    <span className="text-[#14352E]">{money(grandTotal)}</span>
+                </div>
+            </div>
+
+            {isOpen && (
+                <>
                     {closeError && (
                         <p className="text-red-600 text-sm mt-3">
                             {closeError}
                         </p>
                     )}
-
                     <button
                         onClick={onCloseShift}
                         disabled={isClosing}
-                        className="mt-5 w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white font-bold py-3 rounded-md transition-colors"
+                        className="mt-5 w-full bg-[#14352E] hover:bg-[#0f2921] disabled:opacity-60 text-white font-bold py-3 rounded-md transition-colors"
                     >
-                        {isClosing ? "Processing…" : "Close Shift & Finalize"}
+                        {isClosing ? "Processing…" : "Confirm & Close Shift"}
                     </button>
                 </>
-            ) : (
-                <div className="space-y-2 text-sm font-mono">
-                    {BLIND_FIELDS.map(([field, label]) => (
-                        <div key={field} className="flex justify-between">
-                            <span className="text-stone-500 font-sans">
-                                {label}
-                            </span>
-                            <span className="font-semibold text-stone-900">
-                                {money(data.shift[field])}
-                            </span>
-                        </div>
-                    ))}
-                    <p className="text-xs text-stone-500 font-sans pt-2">
-                        Closed {formatShiftDate(data.shift.closed_at)}
-                    </p>
-                </div>
             )}
         </section>
     );
