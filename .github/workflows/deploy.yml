@@ -17,7 +17,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.5"
-          extensions: mbstring, pdo_pgsql, bcmath, zip, gd, intl
+          extensions: mbstring, pdo_pgsql, pdo_sqlite, bcmath, zip, gd, intl
           coverage: none
 
       - name: Install Composer dependencies
@@ -38,13 +38,12 @@ jobs:
       - name: Prepare test environment
         run: |
           cp .env.example .env
-          touch database/database.sqlite
           php artisan key:generate
 
-      - name: Run migrations
-        run: php artisan migrate --force
-
       - name: Run tests
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ":memory:"
         run: php artisan test
 
   deploy:
@@ -62,13 +61,13 @@ jobs:
           script: |
             set -e
 
-            if [ ! -d "/var/www/mom-and-pop-pos/.git" ]; then
-              echo "==> Fresh VPS detected. Cloning repository..."
-              git clone https://github.com/Mikelesnr/mom-popPOS.git /var/www/mom-and-pop-pos
-              cd /var/www/mom-and-pop-pos
+            if [ ! -d "/var/www/mom-popPOS/.git" ]; then
+              echo "==> Fresh VPS directory detected. Cloning repository..."
+              git clone https://github.com/Mikelesnr/mom-popPOS.git /var/www/mom-popPOS
+              cd /var/www/mom-popPOS
             else
-              cd /var/www/mom-and-pop-pos
-              echo "==> Pulling latest main"
+              cd /var/www/mom-popPOS
+              echo "==> Pulling latest main branch"
               git pull origin main
             fi
 
@@ -79,16 +78,16 @@ jobs:
             npm ci
             npm run build
 
-            echo "==> Running migrations"
+            echo "==> Running database migrations"
             php artisan migrate --force
 
-            echo "==> Refreshing caches"
+            echo "==> Refreshing application caches"
             php artisan config:cache
             php artisan route:cache
             php artisan view:cache
             php artisan event:cache
 
-            echo "==> Fixing storage/cache permissions and reloading php-fpm"
+            echo "==> Applying file permissions and reloading services"
             sudo /usr/local/bin/fix-app-permissions.sh
 
-            echo "==> Deploy complete"
+            echo "==> Deploy complete!"
