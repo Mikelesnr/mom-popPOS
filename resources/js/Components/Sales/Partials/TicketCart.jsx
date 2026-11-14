@@ -4,6 +4,7 @@ import CheckoutTableButton from "@/Components/Sales/CheckoutTableButton";
 import { updateTableItemsLocal, closeTableLocal } from "@/Utils/db";
 import PaymentSelectionModal from "@/Components/Sales/PaymentSelectionModal";
 import toast from "react-hot-toast";
+import { useDeviceSync } from "@/Components/Devices/DeviceSyncProvider";
 
 export default function TicketCart({
     cart,
@@ -14,6 +15,7 @@ export default function TicketCart({
     onPrint,
 }) {
     const [activePaymentContext, setActivePaymentContext] = useState(null);
+    const { printKitchenTicket } = useDeviceSync();
 
     const cartTotal = cart.reduce(
         (sum, item) => sum + (parseFloat(item.subtotal) || 0),
@@ -56,6 +58,12 @@ export default function TicketCart({
 
         try {
             await updateTableItemsLocal(activeTable.id, newItems);
+            // Only the new items, and only if a kitchen printer is chosen.
+            printKitchenTicket({
+                tableName: activeTable.name,
+                items: newItems,
+                isUpdate: true,
+            });
             toast.success("Table updated successfully!");
             clearCart();
         } catch (e) {

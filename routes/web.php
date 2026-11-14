@@ -73,6 +73,9 @@ Route::middleware('auth')->group(function () {
     // Register Cashup Sub-Router
     require __DIR__ . '/cashup.php';
 
+    // Register device mesh (WebRTC signaling) Sub-Router
+    require __DIR__ . '/devices.php';
+
     // Register Audit Sub-Router
     require __DIR__ . '/audit.php';
 

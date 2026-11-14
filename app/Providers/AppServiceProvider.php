@@ -176,6 +176,13 @@ class AppServiceProvider extends ServiceProvider
             return in_array($user->role, $allowedFrontline);
         });
 
+        // Device mesh gate: anyone who may run a POS terminal for their own shop
+        // may join that shop's device mesh (live sync + remote printing).
+        Gate::define('join-device-mesh', function (User $user) {
+            return !is_null($user->shop_id)
+                && Gate::forUser($user)->allows('operate-pos', $user->shop_id);
+        });
+
         Gate::define('management', function (User $user, $shopId = null) {
             // 1. Owners check the shopsOwned relationship
             if ($user->role === UserRole::OWNER) {

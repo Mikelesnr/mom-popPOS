@@ -104,7 +104,7 @@ class User extends Authenticatable
         return $this->role === $role;
     }
 
-    public function setPinAttribute($value)
+    public function setPinAttribute(mixed $value): void
     {
         $this->attributes['pin'] = $value ? Hash::make($value) : null;
     }

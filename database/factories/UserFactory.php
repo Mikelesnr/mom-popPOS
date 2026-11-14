@@ -18,7 +18,7 @@ class UserFactory extends Factory
             'name' => $this->faker->name(),
             'email' => $this->faker->unique()->safeEmail(),
             'email_verified_at' => now(),
-            'password' => Hash::make('Test1234#'),
+            'password' => Hash::make(config('testing.default_password')),
             'remember_token' => Str::random(10),
             'role' => UserRole::CASHIER, // default role
         ];
@@ -42,5 +42,15 @@ class UserFactory extends Factory
     public function cashier(): static
     {
         return $this->state(fn() => ['role' => UserRole::CASHIER]);
+    }
+
+    /**
+     * Indicate that the model's email address should be unverified.
+     */
+    public function unverified(): static
+    {
+        return $this->state(fn(array $attributes) => [
+            'email_verified_at' => null,
+        ]);
     }
 }
