@@ -2,10 +2,12 @@
 import React, { useState } from "react";
 import { saveTableLocal, saveOrderItemLocal } from "@/Utils/db";
 import toast from "react-hot-toast";
+import { useDeviceSync } from "@/Components/Devices/DeviceSyncProvider";
 
 export default function CheckoutTableButton({ cart, auth, onClearCart }) {
     const [isNameModalOpen, setIsNameModalOpen] = useState(false);
     const [tableName, setTableName] = useState("");
+    const { printKitchenTicket } = useDeviceSync();
 
     const cartTotal = cart.reduce(
         (sum, i) => sum + (parseFloat(i.subtotal) || 0),
@@ -44,6 +46,9 @@ export default function CheckoutTableButton({ cart, auth, onClearCart }) {
                     metadata: item.metadata || { type: "unit" },
                 });
             }
+
+            // Only prints if a kitchen printer is chosen in the Shop devices panel.
+            printKitchenTicket({ tableName, items: cart, isUpdate: false });
 
             onClearCart();
             setTableName(""); // Reset input

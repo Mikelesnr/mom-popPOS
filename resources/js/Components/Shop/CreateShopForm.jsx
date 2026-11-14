@@ -61,6 +61,12 @@ export default function CreateShopForm() {
                 Register New Location
             </h2>
 
+            {errors.latitude && (
+                <div className="mb-4 rounded-md border border-red-300 bg-red-50 p-3">
+                    <p className="text-sm text-red-700">{errors.latitude}</p>
+                </div>
+            )}
+
             <div className="space-y-4">
                 {/* Shop Name */}
                 <div>

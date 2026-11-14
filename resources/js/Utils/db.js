@@ -316,34 +316,42 @@ export const syncTablesToServer = async () => {
 };
 
 // Add these to your @/Utils/db.js
-export const updateTableItemsLocal = async (tableId, items) => {
-    // 1. Remove existing items for this specific table
-    await db.order_items.where("orderable_id").equals(tableId).delete();
+//
+// Appends the newly rung items to an open table and recomputes its total from
+// everything on the table. Items already on the table are immutable
+// (placed: 1) and are never removed here. This used to delete every item on
+// the table and re-add only the new ones, which silently dropped earlier
+// rounds and reset the total to just the latest round. Append-only is also
+// what lets devices replicate a table without losing each other's items.
+export const updateTableItemsLocal = async (tableId, newItems) => {
+    return db.transaction("rw", db.order_items, db.open_tables, async () => {
+        for (const item of newItems) {
+            await saveOrderItemLocal({
+                id: crypto.randomUUID(),
+                orderable_id: tableId,
+                product_id: item.product_id,
+                name: item.name,
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                subtotal: item.subtotal,
+                metadata: item.metadata || { type: "unit" },
+                synced_at: null,
+            });
+        }
 
-    // 2. Add the updated items from the cart
-    for (const item of items) {
-        await saveOrderItemLocal({
-            id: crypto.randomUUID(),
-            orderable_id: tableId,
-            product_id: item.product_id,
-            name: item.name,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            subtotal: item.subtotal,
-            metadata: item.metadata || { type: "unit" },
-            synced_at: null,
-        });
-    }
+        const all = await db.order_items
+            .where("orderable_id")
+            .equals(tableId)
+            .toArray();
+        const total =
+            Math.round(
+                all.reduce((sum, i) => sum + (parseFloat(i.subtotal) || 0), 0) *
+                    100,
+            ) / 100;
 
-    // 3. Recalculate and update the table total
-    const total = items.reduce(
-        (sum, i) => sum + (parseFloat(i.subtotal) || 0),
-        0,
-    );
-    await db.open_tables.update(tableId, { total_amount: total });
-    console.log(
-        `✅ Updated table ${tableId} with ${items.length} items and total ${total}`,
-    );
+        await db.open_tables.update(tableId, { total_amount: total });
+        return total;
+    });
 };
 
 /**
