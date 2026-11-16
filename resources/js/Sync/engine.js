@@ -78,6 +78,7 @@ export function createEngine({
     let snapshot = null;
     let printHost = null;
     let stopped = false;
+    let denied = false; // the server refused this device (logged out, wrong role)
 
     const getSnapshot = () => {
         if (snapshot && snapshot.version === version) return snapshot;
@@ -90,6 +91,7 @@ export function createEngine({
             routes: { ...routes },
             peers: state.peers,
             status: state.status,
+            denied,
         };
         return snapshot;
     };
@@ -142,7 +144,12 @@ export function createEngine({
             state.status = status;
             touch();
         },
-        onAuthLost: () => engine.stop(),
+        // Keep the engine (and its explanation) on screen, but mark it unusable
+        // so the next page load builds a fresh one after signing in again.
+        onAuthLost: () => {
+            denied = true;
+            touch();
+        },
         ...meshOptions,
     });
 
@@ -180,7 +187,7 @@ export function createEngine({
             eventListeners.clear();
         },
 
-        isStopped: () => stopped,
+        isStopped: () => stopped || denied,
         getSnapshot,
         subscribe(fn) {
             stateListeners.add(fn);
@@ -219,6 +226,28 @@ export function createEngine({
         },
 
         sendPrint: (targetId, job) => printService.sendPrint(targetId, job),
+
+        /** Everything needed to work out why devices are not linking. */
+        getDiagnostics() {
+            const g = globalThis;
+            const mesh_ = mesh.getDiagnostics();
+            return {
+                when: new Date().toISOString(),
+                device: { id: deviceId, name: self.name, canPrint: self.canPrint, shopId },
+                browser: {
+                    userAgent: g.navigator?.userAgent,
+                    secureContext: g.isSecureContext,
+                    page: g.location?.origin,
+                    hasRTCPeerConnection: typeof g.RTCPeerConnection !== "undefined",
+                    online: g.navigator?.onLine,
+                },
+                linkedPeers: state.peers,
+                routes: { ...routes },
+                denied,
+                status: mesh_.status,
+                log: mesh_.log,
+            };
+        },
         nameOf,
         syncNow: () => replicator.syncNow(),
     };

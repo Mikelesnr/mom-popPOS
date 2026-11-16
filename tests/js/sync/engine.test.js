@@ -148,5 +148,27 @@ describe("engine", () => {
         });
         engine.start();
         await waitFor(() => engine.isStopped(), 3000, "engine stopped itself");
+
+        // and it says why, instead of just going quiet
+        const snap = engine.getSnapshot();
+        expect(snap.denied).toBe(true);
+        expect(snap.status.signaling).toBe("denied");
+        expect(snap.status.httpStatus).toBe(419);
+        const diag = engine.getDiagnostics();
+        expect(diag.denied).toBe(true);
+        expect(diag.log.some((e) => e.kind === "server refused this device")).toBe(true);
     });
+
+    it("diagnostics describe the device, the browser and what happened", async () => {
+        const server = signalServer();
+        const a = mk("aaaa1111-0000-4000-8000-000000000001", server);
+        const b = mk("bbbb2222-0000-4000-8000-000000000002", server);
+        await waitFor(() => a.engine.getSnapshot().peers.length === 1, 12_000, "linked");
+        const d = a.engine.getDiagnostics();
+        expect(d.device).toMatchObject({ id: "aaaa1111-0000-4000-8000-000000000001", shopId: "shop-1" });
+        expect(d.browser).toHaveProperty("hasRTCPeerConnection");
+        expect(d.linkedPeers.length).toBe(1);
+        expect(d.log.some((e) => e.kind === "link up")).toBe(true);
+        void b;
+    }, 30_000);
 });

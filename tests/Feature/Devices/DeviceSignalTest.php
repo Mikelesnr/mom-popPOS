@@ -89,7 +89,7 @@ class DeviceSignalTest extends TestCase
             'to' => $b,
             'type' => 'offer',
             'sid' => 'session-1',
-            'payload' => ['type' => 'offer', 'sdp' => 'v=0...'],
+            'payload' => json_encode(['type' => 'offer', 'sdp' => "v=0\r\n"]),
         ])->assertNoContent();
 
         $this->poll($user, $a)->assertJsonCount(0, 'messages');
@@ -99,6 +99,11 @@ class DeviceSignalTest extends TestCase
         $first->assertJsonPath('messages.0.from', $a);
         $first->assertJsonPath('messages.0.type', 'offer');
         $first->assertJsonPath('messages.0.sid', 'session-1');
+        // delivered exactly as sent, including the trailing line break
+        $this->assertSame(
+            ['type' => 'offer', 'sdp' => "v=0\r\n"],
+            json_decode($first->json('messages.0.payload'), true)
+        );
 
         $this->poll($user, $b)->assertJsonCount(0, 'messages');
     }
@@ -119,7 +124,7 @@ class DeviceSignalTest extends TestCase
             'to' => $b,
             'type' => 'ice',
             'sid' => 's',
-            'payload' => ['candidate' => 'x'],
+            'payload' => json_encode(['candidate' => 'x']),
         ])->assertStatus(422)->assertJsonPath('error', 'unknown_peer');
 
         $this->poll($userB, $b)->assertJsonCount(0, 'messages');
@@ -134,15 +139,48 @@ class DeviceSignalTest extends TestCase
         $this->poll($user, $a);
         $this->poll($user, $b);
 
-        $base = ['device_id' => $a, 'to' => $b, 'type' => 'offer', 'sid' => 's', 'payload' => ['x' => 1]];
+        $base = ['device_id' => $a, 'to' => $b, 'type' => 'offer', 'sid' => 's', 'payload' => '{"x":1}'];
 
         $this->actingAs($user)->postJson('/devices/signal', array_merge($base, ['type' => 'shell']))
             ->assertStatus(422);
         $this->actingAs($user)->postJson('/devices/signal', array_merge($base, ['to' => $a]))
             ->assertStatus(422);
         $this->actingAs($user)->postJson('/devices/signal', array_merge($base, [
-            'payload' => ['sdp' => str_repeat('x', 25000)],
-        ]))->assertStatus(413);
+            'payload' => json_encode(['sdp' => str_repeat('x', 25000)]),
+        ]))->assertStatus(422);
+        // an object instead of a JSON string is not accepted
+        $this->actingAs($user)->postJson('/devices/signal', array_merge($base, [
+            'payload' => ['x' => 1],
+        ]))->assertStatus(422);
+    }
+
+    public function test_poll_hands_out_the_configured_ice_servers(): void
+    {
+        config([
+            'mesh.stun_urls' => ['stun:stun.example.org:3478'],
+            'mesh.turn_urls' => ['turn:turn.example.org:3478'],
+            'mesh.turn_secret' => 'shared-secret',
+            'mesh.turn_ttl' => 600,
+        ]);
+        $user = $this->staff($this->shop());
+
+        $res = $this->poll($user, (string) Str::uuid())->assertOk();
+
+        $res->assertJsonPath('ice_servers.0.urls.0', 'stun:stun.example.org:3478');
+        $turn = $res->json('ice_servers.1');
+        $this->assertSame(['turn:turn.example.org:3478'], $turn['urls']);
+        $this->assertStringEndsWith(':' . $user->id, $turn['username']);
+        $this->assertSame(
+            base64_encode(hash_hmac('sha1', $turn['username'], 'shared-secret', true)),
+            $turn['credential']
+        );
+    }
+
+    public function test_turn_is_not_handed_out_without_a_secret(): void
+    {
+        config(['mesh.stun_urls' => [], 'mesh.turn_urls' => ['turn:t:3478'], 'mesh.turn_secret' => null]);
+        $res = $this->poll($this->staff($this->shop()), (string) Str::uuid())->assertOk();
+        $this->assertSame([], $res->json('ice_servers'));
     }
 
     public function test_leaving_removes_the_device_from_the_list(): void

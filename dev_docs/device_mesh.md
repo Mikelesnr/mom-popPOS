@@ -75,6 +75,58 @@ If the chosen bill printer is offline, the bill prints on the current device
 instead. A kitchen ticket never falls back, because a ticket that prints at the
 bar never reaches the kitchen. It shows a loud error instead.
 
+## If devices do not link
+
+Open the pill on the device, then the panel. It now separates three stages:
+
+1. **Is the server reachable?** "No server" means the device cannot reach
+   Laravel at all. "Not allowed" means the server refused it (HTTP 403 or 419),
+   so sign out and in again and check the account's role.
+2. **Does the server see the other device?** "Alone" with the hint "No other
+   device is online" means no other device is polling. The other device must be
+   signed in with the app open on screen. Phones pause pages that are in the
+   background or have the screen off, and a device drops off the list about 30
+   seconds after its last poll.
+3. **Can the two devices open a direct link?** "1 found, not linked" means the
+   server sees the other device but the WebRTC link failed. The row shows the
+   reason and how many network addresses each side offered. That points at the
+   network, not at the app.
+
+Tap **Copy diagnostics** on both devices and send the text. It contains the
+device and browser details, what the server returned, and a timeline of every
+step (offer made, answer received, ICE state, how each link ended).
+
+Things that can stop a direct link even though QuickShare works. QuickShare
+uses Bluetooth and Wi-Fi Direct, so it says nothing about whether the Wi-Fi
+lets devices talk to each other.
+
+- Browsers hide a device's real address behind a random `name.local` (mDNS).
+  The other device has to resolve that name with multicast. Many phone hotspots
+  and some routers do not pass multicast between clients, so the link fails.
+- Client or AP isolation on the router.
+- A VPN or Private DNS on either device.
+- Two devices that are not actually on the same network (for example one on
+  mobile data).
+
+### STUN and TURN
+
+`config/mesh.php` (env: `MESH_STUN_URLS`, `MESH_TURN_URLS`, `MESH_TURN_SECRET`,
+`MESH_TURN_TTL`) controls the helper servers handed to devices at the next poll.
+No frontend rebuild is needed.
+
+- STUN is on by default (a public Google server). It helps devices learn their
+  public address. It will not rescue every network.
+- TURN is off by default. It relays traffic through a server you run, so it
+  works on almost any network, but it needs internet while it is in use and it
+  sends shop traffic through that server. To use it, run coturn with
+  `use-auth-secret` and `static-auth-secret=<the same secret>`, open its ports
+  in the firewall, then set `MESH_TURN_URLS=turn:your.host:3478` and
+  `MESH_TURN_SECRET`. Devices receive short lived credentials, never the secret.
+
+If diagnostics show that the real shop networks block direct links, the next
+step is a fallback that relays data through the server while a direct link is
+not possible.
+
 ## What internet is needed for
 
 Setting up a link between two devices needs the server, for a few seconds.
@@ -117,4 +169,6 @@ signaling layer is written so it can be swapped in.
 `tests/js/README.md` explains how to run the JavaScript tests. They cover the
 clock, merge rules, framing, replication between simulated devices (offline
 catch up, conflicts, relay through a middle device, shop isolation), real WebRTC
-data channels over loopback, printing, and the React provider and panel.
+data channels over loopback (including a server that trims whitespace like
+Laravel does, a connection that never completes, and a browser without WebRTC),
+printing, diagnostics, and the React provider and panel.

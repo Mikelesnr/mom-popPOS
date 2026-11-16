@@ -132,4 +132,85 @@ describe("DeviceSyncProvider", () => {
         expect(toastCalls.some((c) => c.kind === "error" && /Unknown print template/.test(c.msg))).toBe(true);
         expect(printed.length).toBe(0);
     });
+
+describe("device panel explains what is going wrong", () => {
+    const PEER = "00000000-0000-4000-8000-000000000001";
+    const BIG_ID = "ffffffff-ffff-4fff-8fff-ffffffffffff"; // larger id: waits for the other side's offer
+
+    const pollReturns = (body, ok = true, status = 200) => {
+        globalThis.fetch = vi.fn(async () => ({ ok, status, json: async () => body }));
+    };
+    const open = () => fireEvent.click(screen.getByLabelText("Devices in this shop"));
+    afterEach(() => {
+        delete globalThis.RTCPeerConnection;
+    });
+
+    it("says nobody else is online when the server lists no other device", async () => {
+        globalThis.RTCPeerConnection = class {};
+        pollReturns({ peers: [], messages: [] });
+        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
+        await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+        open();
+        expect(screen.getByText("Alone")).toBeTruthy();
+        await waitFor(() => expect(screen.getByText(/No other device is online in this shop/)).toBeTruthy());
+    });
+
+    it("shows a device the server can see but that is not linked, and why", async () => {
+        localStorage.setItem("terminal_device_id", BIG_ID);
+        globalThis.RTCPeerConnection = class {};
+        pollReturns({ peers: [{ device_id: PEER, name: "Kitchen", can_print: true }], messages: [] });
+        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
+        await waitFor(() => expect(screen.getByText("1 found, not linked")).toBeTruthy());
+        open();
+        expect(screen.getByText("Kitchen")).toBeTruthy();
+        expect(screen.getByText("Not linked")).toBeTruthy();
+        expect(screen.getByText(/Seen by the server/)).toBeTruthy();
+        expect(screen.getByText(/could not be opened/)).toBeTruthy();
+        delete globalThis.RTCPeerConnection;
+    });
+
+    it("tells the user when the browser has no WebRTC", async () => {
+        localStorage.setItem("terminal_device_id", BIG_ID);
+        delete globalThis.RTCPeerConnection;
+        pollReturns({ peers: [{ device_id: PEER, name: "Kitchen", can_print: false }], messages: [] });
+        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
+        await waitFor(() => expect(screen.getByText("1 found, not linked")).toBeTruthy());
+        open();
+        expect(screen.getByText(/does not support WebRTC/)).toBeTruthy();
+    });
+
+    it("shows a clear message when the server refuses the device", async () => {
+        pollReturns({}, false, 403);
+        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
+        await waitFor(() => expect(screen.getByText("Not allowed")).toBeTruthy());
+        open();
+        expect(screen.getByText(/refused this device \(HTTP 403\)/)).toBeTruthy();
+    });
+
+    it("says the server cannot be reached when requests fail", async () => {
+        globalThis.RTCPeerConnection = class {};
+        globalThis.fetch = vi.fn(async () => { throw new Error("Failed to fetch"); });
+        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
+        await waitFor(() => expect(screen.getByText("No server")).toBeTruthy());
+        open();
+        expect(screen.getByText(/Cannot reach the server/)).toBeTruthy();
+    });
+
+    it("Copy diagnostics produces a report with the device, the browser and the event log", async () => {
+        pollReturns({ peers: [], messages: [] });
+        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
+        await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+        open();
+        fireEvent.click(screen.getByText("Copy diagnostics"));
+        const box = await waitFor(() => {
+            const el = document.querySelector("textarea");
+            expect(el).toBeTruthy();
+            return el;
+        });
+        const report = JSON.parse(box.value);
+        expect(report.device.id).toBe(localStorage.getItem("terminal_device_id"));
+        expect(report.browser).toHaveProperty("hasRTCPeerConnection");
+        expect(report.log.length).toBeGreaterThan(0);
+    });
+});
 });

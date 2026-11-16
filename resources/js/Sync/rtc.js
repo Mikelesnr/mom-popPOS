@@ -11,23 +11,80 @@
 //
 // Glare: when two devices notice each other at the same time, the one with
 // the smaller device id makes the offer, so they never both offer at once.
+//
+// Everything that happens is also written to a small diagnostic log
+// (getDiagnostics) so "it does not connect" can be traced to a stage:
+// server not reachable, device not seen, offer not answered, or ICE failing.
 
 import { encodeFrames, createReassembler } from "./framing";
 
 const randomId = () =>
     globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36);
 
+const emptyCounts = () => ({ host: 0, srflx: 0, relay: 0, prflx: 0, mdns: 0 });
+
+/** "candidate:1 1 udp 2113937151 abcd.local 54321 typ host" -> { type, mdns } */
+export function classifyCandidate(str) {
+    const s = typeof str === "string" ? str : "";
+    const type = /\styp\s(\w+)/.exec(s)?.[1] || "unknown";
+    const addr = s.split(" ")[4] || "";
+    return { type, mdns: addr.endsWith(".local") };
+}
+
+const count = (counts, c) => {
+    if (counts[c.type] !== undefined) counts[c.type] += 1;
+    if (c.mdns) counts.mdns += 1;
+};
+
+// Setup payloads travel as JSON strings. They used to travel as objects, and
+// the server's whitespace trimming silently cut the trailing line break off
+// every SDP. A JSON string starts and ends with a brace, so it passes
+// through untouched. Objects are still accepted.
+const parsePayload = (p) => {
+    if (typeof p !== "string") return p;
+    try {
+        return JSON.parse(p);
+    } catch {
+        return null;
+    }
+};
+
+async function describePath(pc) {
+    try {
+        if (typeof pc.getStats !== "function") return null;
+        const stats = await pc.getStats();
+        const byId = {};
+        stats.forEach((r) => (byId[r.id] = r));
+        let pair = null;
+        stats.forEach((r) => {
+            if (r.type === "transport" && r.selectedCandidatePairId) pair = byId[r.selectedCandidatePairId];
+        });
+        if (!pair) {
+            stats.forEach((r) => {
+                if (r.type === "candidate-pair" && r.nominated && r.state === "succeeded") pair = r;
+            });
+        }
+        if (!pair) return null;
+        const l = byId[pair.localCandidateId];
+        const r = byId[pair.remoteCandidateId];
+        return `${l?.candidateType || "?"}/${r?.candidateType || "?"}`;
+    } catch {
+        return null;
+    }
+}
+
 export function createRTCMesh({
     bus,
     deviceId,
     getSelfInfo, // () => ({ name, canPrint, shopId })
-    signaling, // { poll(self) -> { peers, messages }, send(msg), leave?() }
+    signaling, // { poll(self) -> { peers, messages, ice_servers? }, send(msg), leave?() }
     RTCPeerConnectionImpl = globalThis.RTCPeerConnection,
-    iceServers = [], // empty = LAN only (no internet needed to connect)
+    iceServers = [], // extra servers; the server can add more (STUN/TURN) in poll()
     pollMs = 2000,
     idlePollMs = 6000,
     pingMs = 10_000,
     deadAfterMs = 25_000,
+    connectTimeoutMs = 20_000, // a link still "connecting" after this is retried
     onStatus = () => {},
     onAuthLost = () => {}, // the server says this session is no longer allowed
     now = () => Date.now(),
@@ -38,16 +95,65 @@ export function createRTCMesh({
     let pollTimer = null;
     let pingTimer = null;
     let stopped = true;
-    let signalingUp = null; // null unknown, true, false
+    let signalingUp = null; // null unknown, true, false, or "denied"
+    let lastError = null;
+    let httpStatus = null;
     let announceDirty = true;
+    let serverIce = [];
+    let lastIceSig = "";
+    let lastOnlineSig = "";
+    let pollFailures = 0;
+    const lastFail = new Map(); // peerId -> { reason, at }, kept across retries
+    const attempts = new Map(); // peerId -> number of connection attempts
+    const webrtcSupported = typeof RTCPeerConnectionImpl === "function";
+
+    const iceConfig = () => [...iceServers, ...serverIce];
+
+    // ----------------------------------------------------------- diagnostics
+
+    const logBuf = [];
+    const note = (kind, detail = {}, level = "debug") => {
+        const entry = { t: new Date(now()).toISOString().slice(11, 23), kind, ...detail };
+        logBuf.push(entry);
+        if (logBuf.length > 200) logBuf.shift();
+        try {
+            console[level]?.("[mesh]", kind, detail);
+        } catch {
+            /* no console */
+        }
+    };
+
+    const shortId = (id) => (id ? String(id).slice(0, 8) : "?");
 
     const status = () => ({
+        webrtcUnsupported: !webrtcSupported,
         signaling: signalingUp,
+        httpStatus,
+        lastError,
         connecting: [...conns.values()].filter((c) => c.state === "connecting").length,
         open: [...conns.values()].filter((c) => c.state === "open").length,
         failed: [...conns.entries()]
             .filter(([, c]) => c.state === "failed")
             .map(([id, c]) => ({ id, reason: c.reason })),
+        online: [...known.values()].map((p) => ({
+            id: p.device_id,
+            name: p.name,
+            canPrint: !!p.can_print,
+        })),
+        connections: [...conns.entries()].map(([id, c]) => ({
+            id,
+            name: known.get(id)?.name || bus.peers().find((p) => p.id === id)?.name || null,
+            state: c.state,
+            reason: c.reason,
+            ice: c.ice,
+            initiator: c.initiator,
+            local: { ...c.cands.local },
+            remote: { ...c.cands.remote },
+            path: c.path,
+            attempts: attempts.get(id) || 0,
+            lastFailure: lastFail.get(id) || null,
+        })),
+        iceServers: iceConfig().map((s) => s.urls),
     });
     const emitStatus = () => onStatus(status());
 
@@ -61,7 +167,12 @@ export function createRTCMesh({
 
         const drain = () => {
             while (backlog.length && dc.readyState === "open" && dc.bufferedAmount < HIGH) {
-                dc.send(backlog.shift());
+                try {
+                    dc.send(backlog.shift());
+                } catch {
+                    backlog.length = 0; // the channel closed under us; teardown follows
+                    return;
+                }
             }
         };
         dc.onbufferedamountlow = drain;
@@ -82,13 +193,24 @@ export function createRTCMesh({
     // Raw send on a channel, used before the link is verified.
     function sendRaw(conn, msg) {
         if (conn.dc?.readyState !== "open") return;
-        for (const frame of encodeFrames(msg)) conn.dc.send(frame);
+        try {
+            for (const frame of encodeFrames(msg)) conn.dc.send(frame);
+        } catch {
+            /* channel closed under us; teardown follows */
+        }
     }
+
+    const candidateSummary = (conn) => {
+        const f = (c) =>
+            `host ${c.host}, srflx ${c.srflx}, relay ${c.relay}${c.mdns ? `, mDNS ${c.mdns}` : ""}`;
+        return `this device: ${f(conn.cands.local)}; other device: ${f(conn.cands.remote)}`;
+    };
 
     // ---------------------------------------------------------- connections
 
     function newConn(peerId, sid, initiator) {
-        const pc = new RTCPeerConnectionImpl({ iceServers });
+        const pc = new RTCPeerConnectionImpl({ iceServers: iceConfig() });
+        attempts.set(peerId, (attempts.get(peerId) || 0) + 1);
         const conn = {
             peerId,
             sid,
@@ -97,6 +219,9 @@ export function createRTCMesh({
             dc: null,
             state: "connecting",
             reason: null,
+            ice: null,
+            path: null,
+            cands: { local: emptyCounts(), remote: emptyCounts() },
             remoteSet: false,
             pendingIce: [],
             reassembler: createReassembler(),
@@ -108,15 +233,25 @@ export function createRTCMesh({
         };
 
         pc.onicecandidate = (e) => {
-            if (e.candidate) {
-                signaling
-                    .send({
-                        to: peerId,
-                        type: "ice",
-                        sid,
-                        payload: typeof e.candidate.toJSON === "function" ? e.candidate.toJSON() : e.candidate,
-                    })
-                    .catch(() => {});
+            if (!e.candidate) {
+                note("ice gathering finished", { peer: shortId(peerId) });
+                return;
+            }
+            const raw = typeof e.candidate.toJSON === "function" ? e.candidate.toJSON() : e.candidate;
+            count(conn.cands.local, classifyCandidate(raw.candidate));
+            signaling
+                .send({ to: peerId, type: "ice", sid, payload: JSON.stringify(raw) })
+                .catch((err) => note("ice send failed", { peer: shortId(peerId), status: err?.status }, "warn"));
+        };
+
+        pc.oniceconnectionstatechange = () => {
+            if (conns.get(peerId) !== conn) return;
+            conn.ice = pc.iceConnectionState;
+            note("ice state", { peer: shortId(peerId), state: conn.ice });
+            if (conn.ice === "failed") {
+                teardown(peerId, `ICE failed, no network path found (${candidateSummary(conn)})`);
+            } else {
+                emitStatus();
             }
         };
 
@@ -130,18 +265,26 @@ export function createRTCMesh({
         return conn;
     }
 
+    function sendHello(conn) {
+        const self = getSelfInfo();
+        sendRaw(conn, {
+            t: "hello",
+            deviceId,
+            shopId: self.shopId,
+            name: self.name,
+            canPrint: !!self.canPrint,
+        });
+    }
+
     function wireChannel(conn, dc) {
         conn.dc = dc;
         dc.onopen = () => {
-            const self = getSelfInfo();
-            sendRaw(conn, {
-                t: "hello",
-                deviceId,
-                shopId: self.shopId,
-                name: self.name,
-                canPrint: !!self.canPrint,
-            });
+            note("data channel open", { peer: shortId(conn.peerId) });
+            sendHello(conn);
         };
+        // A channel handed to us by the other side may already be open by the
+        // time we attach handlers, in which case onopen would never fire.
+        if (dc.readyState === "open") dc.onopen();
         dc.onclose = () => {
             if (conns.get(conn.peerId) === conn) teardown(conn.peerId, "channel closed");
         };
@@ -159,6 +302,7 @@ export function createRTCMesh({
             const self = getSelfInfo();
             // The only thing standing between two shops' data is this check.
             if (msg.shopId !== self.shopId || msg.deviceId !== conn.peerId) {
+                note("hello rejected", { peer: shortId(conn.peerId), why: "shop or device mismatch" }, "warn");
                 conn.reason = "shop mismatch";
                 teardown(conn.peerId, "shop mismatch");
                 return;
@@ -174,6 +318,14 @@ export function createRTCMesh({
             });
             conn.link = link;
             bus.attach(conn.peerId, link);
+            note("link up", { peer: shortId(conn.peerId), name: msg.name }, "info");
+            describePath(conn.pc).then((path) => {
+                if (path && conns.get(conn.peerId) === conn) {
+                    conn.path = path;
+                    note("path", { peer: shortId(conn.peerId), path }, "info");
+                    emitStatus();
+                }
+            });
             emitStatus();
             return;
         }
@@ -195,6 +347,10 @@ export function createRTCMesh({
         conn.reason = reason;
         conn.retryAt = now() + conn.backoff;
         conn.backoff = Math.min(conn.backoff * 2, 30_000);
+        note("link down", { peer: shortId(peerId), reason, wasOpen }, wasOpen ? "info" : "warn");
+        if (reason !== "stopped" && reason !== "replaced by new offer") {
+            lastFail.set(peerId, { reason, at: new Date(now()).toISOString() });
+        }
         try {
             conn.dc && (conn.dc.onclose = null);
             conn.dc?.close();
@@ -212,22 +368,28 @@ export function createRTCMesh({
 
     // ------------------------------------------------------------ signaling
 
+    const sendSignal = (peerId, type, sid, payload) =>
+        signaling.send({ to: peerId, type, sid, payload: JSON.stringify(payload) });
+
     async function initiate(peerId) {
         const sid = randomId();
-        const conn = newConn(peerId, sid, true);
+        let conn;
+        try {
+            conn = newConn(peerId, sid, true);
+        } catch (err) {
+            note("could not create a connection", { message: err?.message }, "warn");
+            return;
+        }
         conns.set(peerId, conn);
+        note("making offer", { peer: shortId(peerId) });
         emitStatus();
         try {
             wireChannel(conn, conn.pc.createDataChannel("mesh", { ordered: true }));
             const offer = await conn.pc.createOffer();
             await conn.pc.setLocalDescription(offer);
             const d = conn.pc.localDescription;
-            await signaling.send({
-                to: peerId,
-                type: "offer",
-                sid,
-                payload: { type: d.type, sdp: d.sdp },
-            });
+            await sendSignal(peerId, "offer", sid, { type: d.type, sdp: d.sdp });
+            note("offer sent", { peer: shortId(peerId) });
         } catch (err) {
             teardown(peerId, `offer failed: ${err.message}`);
         }
@@ -246,10 +408,17 @@ export function createRTCMesh({
     }
 
     async function handleSignal(msg) {
-        const { from, type, sid, payload } = msg;
+        const { from, type, sid } = msg;
+        const payload = parsePayload(msg.payload);
         if (!from || from === deviceId) return;
+        if (!payload) {
+            note("bad signal payload", { peer: shortId(from), type }, "warn");
+            return;
+        }
 
         if (type === "offer") {
+            if (!webrtcSupported) return;
+            note("offer received", { peer: shortId(from) });
             // A fresh offer always replaces whatever we had with that peer.
             const old = conns.get(from);
             if (old && old.sid !== sid) teardown(from, "replaced by new offer");
@@ -265,7 +434,8 @@ export function createRTCMesh({
                 const answer = await conn.pc.createAnswer();
                 await conn.pc.setLocalDescription(answer);
                 const d = conn.pc.localDescription;
-                await signaling.send({ to: from, type: "answer", sid, payload: { type: d.type, sdp: d.sdp } });
+                await sendSignal(from, "answer", sid, { type: d.type, sdp: d.sdp });
+                note("answer sent", { peer: shortId(from) });
             } catch (err) {
                 teardown(from, `answer failed: ${err.message}`);
             }
@@ -275,6 +445,7 @@ export function createRTCMesh({
         const conn = conns.get(from);
 
         if (type === "answer") {
+            note("answer received", { peer: shortId(from) });
             if (!conn || conn.sid !== sid || !conn.initiator || conn.remoteSet) return;
             try {
                 await conn.pc.setRemoteDescription(payload);
@@ -287,12 +458,14 @@ export function createRTCMesh({
         }
 
         if (type === "ice") {
+            const cls = classifyCandidate(payload.candidate);
             if (!conn || conn.sid !== sid) {
                 const key = `${from}:${sid}`;
                 if (!earlyIce.has(key)) earlyIce.set(key, []);
                 earlyIce.get(key).push(payload);
                 return;
             }
+            count(conn.cands.remote, cls);
             if (!conn.remoteSet) conn.pendingIce.push(payload);
             else {
                 try {
@@ -306,12 +479,18 @@ export function createRTCMesh({
 
     function maybeConnect(peerId) {
         if (peerId === deviceId) return;
+        if (!webrtcSupported) return; // reported through status().webrtcUnsupported
         const conn = conns.get(peerId);
         const needs = !conn || (conn.state === "failed" && now() >= conn.retryAt);
         // A connection stuck in "connecting" for too long is retried too.
-        const stuck = conn && conn.state === "connecting" && now() - conn.startedAt > 20_000;
-        if (stuck) teardown(peerId, "timed out");
-        if (!needs && !stuck) return;
+        const stuck = conn && conn.state === "connecting" && now() - conn.startedAt > connectTimeoutMs;
+        if (stuck) {
+            // Mark it failed and let the normal backoff decide when to retry,
+            // so the reason stays visible instead of flashing past.
+            teardown(peerId, `timed out waiting for the other device (${candidateSummary(conn)})`);
+            return;
+        }
+        if (!needs) return;
         // Only the smaller id makes the offer. The other side just waits.
         if (deviceId < peerId) initiate(peerId);
     }
@@ -328,25 +507,54 @@ export function createRTCMesh({
                 can_print: !!self.canPrint,
             });
             if (signalingUp !== true) {
+                note("server reachable", {}, "info");
                 signalingUp = true;
+                lastError = null;
+                httpStatus = null;
                 emitStatus();
             }
+            pollFailures = 0;
             announceDirty = false;
 
-            known.clear();
-            for (const p of res.peers || []) {
-                known.set(p.device_id, p);
-                maybeConnect(p.device_id);
+            if (Array.isArray(res.ice_servers)) {
+                const sig = JSON.stringify(res.ice_servers.map((s) => s.urls));
+                if (sig !== lastIceSig) {
+                    lastIceSig = sig;
+                    serverIce = res.ice_servers;
+                    note("ice servers", { urls: res.ice_servers.map((s) => s.urls) }, "info");
+                    emitStatus();
+                }
             }
+
+            known.clear();
+            for (const p of res.peers || []) known.set(p.device_id, p);
+            const onlineSig = [...known.keys()].sort().join(",");
+            if (onlineSig !== lastOnlineSig) {
+                lastOnlineSig = onlineSig;
+                note("devices online", { count: known.size, names: [...known.values()].map((p) => p.name) }, "info");
+                emitStatus();
+            }
+            for (const id of known.keys()) maybeConnect(id);
             for (const m of res.messages || []) await handleSignal(m);
         } catch (err) {
             if ([401, 403, 419].includes(err?.status)) {
                 // Logged out or not allowed any more. Stop quietly instead of
-                // hammering the server every two seconds.
+                // hammering the server every two seconds, but say why.
+                note("server refused this device", { status: err.status }, "warn");
+                signalingUp = "denied";
+                httpStatus = err.status;
+                lastError = `The server refused this device (HTTP ${err.status})`;
+                emitStatus();
                 onAuthLost(err);
                 return;
             }
             // Offline or server down. Existing links are untouched.
+            pollFailures += 1;
+            lastError = err?.message || "request failed";
+            httpStatus = err?.status ?? null;
+            if (pollFailures === 1 || pollFailures % 15 === 0) {
+                note("cannot reach server", { status: err?.status, message: err?.message }, "warn");
+            }
             if (signalingUp !== false) {
                 signalingUp = false;
                 emitStatus();
@@ -373,6 +581,7 @@ export function createRTCMesh({
         start() {
             if (!stopped) return;
             stopped = false;
+            note("mesh started", { device: shortId(deviceId), webrtc: webrtcSupported }, webrtcSupported ? "debug" : "warn");
             poll();
             pingTimer = setInterval(heartbeat, pingMs);
         },
@@ -402,6 +611,7 @@ export function createRTCMesh({
         /** Devices the server says are online, connected or not. */
         online: () => [...known.values()],
         status,
+        getDiagnostics: () => ({ log: logBuf.slice(), status: status() }),
     };
 }
 
