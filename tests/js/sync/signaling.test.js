@@ -11,7 +11,7 @@ describe("http signaling client", () => {
             csrfHeaders: () => ({ "X-XSRF-TOKEN": "tok" }),
         });
         await sig.poll({ device_id: "dev-1", name: "Bar", can_print: false });
-        await sig.send({ to: "dev-2", type: "offer", sid: "s", payload: { sdp: "x" } });
+        await sig.send({ to: "dev-2", type: "offer", sid: "s", payload: JSON.stringify({ sdp: "x" }) });
 
         expect(calls[0].url).toBe("/devices/poll");
         expect(calls[0].init.headers["X-XSRF-TOKEN"]).toBe("tok");

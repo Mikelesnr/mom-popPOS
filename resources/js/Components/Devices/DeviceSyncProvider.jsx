@@ -201,6 +201,8 @@ function ActiveProvider({ shopId, userName, children }) {
             canPrint: snap.canPrint,
             peers: snap.peers,
             status: snap.status,
+            denied: snap.denied,
+            getDiagnostics: engine.getDiagnostics,
             routes: snap.routes,
             printers,
             setDeviceName: engine.setName,

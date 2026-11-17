@@ -65,6 +65,7 @@ class DeviceSignalController extends Controller
             'server_time' => now()->toIso8601String(),
             'peers' => $this->peers($shopId, $deviceId),
             'messages' => $this->drainMailbox($shopId, $deviceId),
+            'ice_servers' => $this->iceServers($user),
         ]);
     }
 
@@ -80,12 +81,11 @@ class DeviceSignalController extends Controller
             'to' => ['required', 'uuid', 'different:device_id'],
             'type' => ['required', Rule::in(['offer', 'answer', 'ice'])],
             'sid' => ['required', 'string', 'max:64'],
-            'payload' => ['required', 'array'],
+            // A JSON string, not an object: Laravel's whitespace trimming would
+            // cut the trailing line break off an SDP. The server never looks
+            // inside it, it only passes it on.
+            'payload' => ['required', 'string', 'max:' . self::PAYLOAD_MAX_CHARS],
         ]);
-
-        if (strlen(json_encode($data['payload'])) > self::PAYLOAD_MAX_CHARS) {
-            abort(413, 'Signal too large.');
-        }
 
         $shopId = $user->shop_id;
 
@@ -132,6 +132,35 @@ class DeviceSignalController extends Controller
     }
 
     // ------------------------------------------------------------------
+
+    /**
+     * STUN/TURN servers the devices should use when they connect. Configured in
+     * config/mesh.php. TURN credentials are short lived (coturn "REST API"
+     * style: username is an expiry time, password is an HMAC of it), so they
+     * are safe to hand to the browser.
+     */
+    private function iceServers($user): array
+    {
+        $servers = [];
+
+        $stun = array_values(array_filter((array) config('mesh.stun_urls', [])));
+        if ($stun) {
+            $servers[] = ['urls' => $stun];
+        }
+
+        $turn = array_values(array_filter((array) config('mesh.turn_urls', [])));
+        $secret = config('mesh.turn_secret');
+        if ($turn && $secret) {
+            $username = (time() + (int) config('mesh.turn_ttl', 3600)) . ':' . $user->id;
+            $servers[] = [
+                'urls' => $turn,
+                'username' => $username,
+                'credential' => base64_encode(hash_hmac('sha1', $username, $secret, true)),
+            ];
+        }
+
+        return $servers;
+    }
 
     private function presenceKey(string $shopId, string $deviceId): string
     {
