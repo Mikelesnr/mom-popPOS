@@ -16,6 +16,7 @@ import {
 } from "@/Utils/db";
 import toast from "react-hot-toast";
 import { BillTemplate } from "./BillTemplate";
+import { useDeviceSync } from "@/Components/Devices/DeviceSyncProvider";
 import { useReactToPrint } from "react-to-print";
 
 export default function TerminalPointOfSale() {
@@ -55,6 +56,19 @@ export default function TerminalPointOfSale() {
         (sum, item) => sum + (parseFloat(item.subtotal) || 0),
         0,
     );
+
+    // If a bill printer on another device is selected (Shop devices panel),
+    // send the bill there. Returns false to fall through to local printing.
+    const { printBill } = useDeviceSync();
+    const printBillRemote = () =>
+        printBill({
+            title: activeTable ? "Table Bill" : "Receipt",
+            date: new Date().toLocaleDateString(),
+            staff: auth.user.name,
+            customer: activeTable ? activeTable.name : null,
+            items: cart,
+            totals: { total: cartTotal },
+        });
 
     const colorPalette = [
         "bg-blue-600 hover:bg-blue-700 text-white",
@@ -218,6 +232,7 @@ export default function TerminalPointOfSale() {
                             activeTable={activeTable}
                             setActiveTable={setActiveTable}
                             onPrint={() => {
+                                if (printBillRemote()) return;
                                 // Prepare metadata for the receipt
                                 const printMetadata = {
                                     date: new Date().toLocaleDateString(),
@@ -279,6 +294,7 @@ export default function TerminalPointOfSale() {
                                 activeTable={activeTable}
                                 setActiveTable={setActiveTable}
                                 onPrint={() => {
+                                    if (printBillRemote()) return;
                                     // Prepare metadata for the receipt
                                     const printMetadata = {
                                         date: new Date().toLocaleDateString(),

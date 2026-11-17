@@ -4,6 +4,7 @@ import NavLink from "@/Components/NavLink";
 import ResponsiveNavLink from "@/Components/ResponsiveNavLink";
 import { Link, usePage } from "@inertiajs/react";
 import { useState } from "react";
+import DeviceSyncProvider from "@/Components/Devices/DeviceSyncProvider";
 
 export default function AuthenticatedLayout({ header, children }) {
     const user = usePage().props.auth.user;
@@ -191,7 +192,9 @@ export default function AuthenticatedLayout({ header, children }) {
             )}
 
             {/* Main content always visible */}
-            <main>{children}</main>
+            <main>
+                <DeviceSyncProvider>{children}</DeviceSyncProvider>
+            </main>
         </div>
     );
 }

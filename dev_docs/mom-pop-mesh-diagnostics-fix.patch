@@ -1,0 +1,1394 @@
+diff --git a/.env.example b/.env.example
+index c0660ea..0236eb7 100644
+--- a/.env.example
++++ b/.env.example
+@@ -63,3 +63,9 @@ AWS_BUCKET=
+ AWS_USE_PATH_STYLE_ENDPOINT=false
+ 
+ VITE_APP_NAME="${APP_NAME}"
++
++# Device mesh (WebRTC). STUN is on by default. TURN is optional (see dev_docs/device_mesh.md).
++MESH_STUN_URLS=stun:stun.l.google.com:19302
++MESH_TURN_URLS=
++MESH_TURN_SECRET=
++MESH_TURN_TTL=3600
+diff --git a/app/Http/Controllers/Devices/DeviceSignalController.php b/app/Http/Controllers/Devices/DeviceSignalController.php
+index 9757004..01ec571 100644
+--- a/app/Http/Controllers/Devices/DeviceSignalController.php
++++ b/app/Http/Controllers/Devices/DeviceSignalController.php
+@@ -65,6 +65,7 @@ public function poll(Request $request)
+             'server_time' => now()->toIso8601String(),
+             'peers' => $this->peers($shopId, $deviceId),
+             'messages' => $this->drainMailbox($shopId, $deviceId),
++            'ice_servers' => $this->iceServers($user),
+         ]);
+     }
+ 
+@@ -80,13 +81,12 @@ public function signal(Request $request)
+             'to' => ['required', 'uuid', 'different:device_id'],
+             'type' => ['required', Rule::in(['offer', 'answer', 'ice'])],
+             'sid' => ['required', 'string', 'max:64'],
+-            'payload' => ['required', 'array'],
++            // A JSON string, not an object: Laravel's whitespace trimming would
++            // cut the trailing line break off an SDP. The server never looks
++            // inside it, it only passes it on.
++            'payload' => ['required', 'string', 'max:' . self::PAYLOAD_MAX_CHARS],
+         ]);
+ 
+-        if (strlen(json_encode($data['payload'])) > self::PAYLOAD_MAX_CHARS) {
+-            abort(413, 'Signal too large.');
+-        }
+-
+         $shopId = $user->shop_id;
+ 
+         // Both ends must currently be online in THIS shop. Presence keys are
+@@ -133,6 +133,35 @@ public function leave(Request $request)
+ 
+     // ------------------------------------------------------------------
+ 
++    /**
++     * STUN/TURN servers the devices should use when they connect. Configured in
++     * config/mesh.php. TURN credentials are short lived (coturn "REST API"
++     * style: username is an expiry time, password is an HMAC of it), so they
++     * are safe to hand to the browser.
++     */
++    private function iceServers($user): array
++    {
++        $servers = [];
++
++        $stun = array_values(array_filter((array) config('mesh.stun_urls', [])));
++        if ($stun) {
++            $servers[] = ['urls' => $stun];
++        }
++
++        $turn = array_values(array_filter((array) config('mesh.turn_urls', [])));
++        $secret = config('mesh.turn_secret');
++        if ($turn && $secret) {
++            $username = (time() + (int) config('mesh.turn_ttl', 3600)) . ':' . $user->id;
++            $servers[] = [
++                'urls' => $turn,
++                'username' => $username,
++                'credential' => base64_encode(hash_hmac('sha1', $username, $secret, true)),
++            ];
++        }
++
++        return $servers;
++    }
++
+     private function presenceKey(string $shopId, string $deviceId): string
+     {
+         return "mesh:{$shopId}:presence:{$deviceId}";
+diff --git a/config/mesh.php b/config/mesh.php
+new file mode 100644
+index 0000000..d0670a4
+--- /dev/null
++++ b/config/mesh.php
+@@ -0,0 +1,18 @@
++<?php
++
++// Device mesh (WebRTC) settings. See dev_docs/device_mesh.md.
++return [
++
++    // STUN lets a device learn its public address. It helps when devices are
++    // on different networks or the Wi-Fi hides local addresses. A comma
++    // separated list. Leave empty for strictly local-only connections.
++    'stun_urls' => array_filter(array_map('trim', explode(',', env('MESH_STUN_URLS', 'stun:stun.l.google.com:19302')))),
++
++    // TURN relays traffic when no direct path exists (some hotspots and
++    // routers). Optional. Needs a TURN server such as coturn with
++    // "use-auth-secret" and the same shared secret. Traffic then goes through
++    // that server, so it needs internet while it is in use.
++    'turn_urls' => array_filter(array_map('trim', explode(',', env('MESH_TURN_URLS', '')))),
++    'turn_secret' => env('MESH_TURN_SECRET'),
++    'turn_ttl' => (int) env('MESH_TURN_TTL', 3600),
++];
+diff --git a/dev_docs/device_mesh.md b/dev_docs/device_mesh.md
+index 1e9dbce..c020d8f 100644
+--- a/dev_docs/device_mesh.md
++++ b/dev_docs/device_mesh.md
+@@ -75,6 +75,58 @@ ### Printing
+ instead. A kitchen ticket never falls back, because a ticket that prints at the
+ bar never reaches the kitchen. It shows a loud error instead.
+ 
++## If devices do not link
++
++Open the pill on the device, then the panel. It now separates three stages:
++
++1. **Is the server reachable?** "No server" means the device cannot reach
++   Laravel at all. "Not allowed" means the server refused it (HTTP 403 or 419),
++   so sign out and in again and check the account's role.
++2. **Does the server see the other device?** "Alone" with the hint "No other
++   device is online" means no other device is polling. The other device must be
++   signed in with the app open on screen. Phones pause pages that are in the
++   background or have the screen off, and a device drops off the list about 30
++   seconds after its last poll.
++3. **Can the two devices open a direct link?** "1 found, not linked" means the
++   server sees the other device but the WebRTC link failed. The row shows the
++   reason and how many network addresses each side offered. That points at the
++   network, not at the app.
++
++Tap **Copy diagnostics** on both devices and send the text. It contains the
++device and browser details, what the server returned, and a timeline of every
++step (offer made, answer received, ICE state, how each link ended).
++
++Things that can stop a direct link even though QuickShare works. QuickShare
++uses Bluetooth and Wi-Fi Direct, so it says nothing about whether the Wi-Fi
++lets devices talk to each other.
++
++- Browsers hide a device's real address behind a random `name.local` (mDNS).
++  The other device has to resolve that name with multicast. Many phone hotspots
++  and some routers do not pass multicast between clients, so the link fails.
++- Client or AP isolation on the router.
++- A VPN or Private DNS on either device.
++- Two devices that are not actually on the same network (for example one on
++  mobile data).
++
++### STUN and TURN
++
++`config/mesh.php` (env: `MESH_STUN_URLS`, `MESH_TURN_URLS`, `MESH_TURN_SECRET`,
++`MESH_TURN_TTL`) controls the helper servers handed to devices at the next poll.
++No frontend rebuild is needed.
++
++- STUN is on by default (a public Google server). It helps devices learn their
++  public address. It will not rescue every network.
++- TURN is off by default. It relays traffic through a server you run, so it
++  works on almost any network, but it needs internet while it is in use and it
++  sends shop traffic through that server. To use it, run coturn with
++  `use-auth-secret` and `static-auth-secret=<the same secret>`, open its ports
++  in the firewall, then set `MESH_TURN_URLS=turn:your.host:3478` and
++  `MESH_TURN_SECRET`. Devices receive short lived credentials, never the secret.
++
++If diagnostics show that the real shop networks block direct links, the next
++step is a fallback that relays data through the server while a direct link is
++not possible.
++
+ ## What internet is needed for
+ 
+ Setting up a link between two devices needs the server, for a few seconds.
+@@ -117,4 +169,6 @@ ## Tests
+ `tests/js/README.md` explains how to run the JavaScript tests. They cover the
+ clock, merge rules, framing, replication between simulated devices (offline
+ catch up, conflicts, relay through a middle device, shop isolation), real WebRTC
+-data channels over loopback, printing, and the React provider and panel.
++data channels over loopback (including a server that trims whitespace like
++Laravel does, a connection that never completes, and a browser without WebRTC),
++printing, diagnostics, and the React provider and panel.
+diff --git a/resources/js/Components/Devices/DeviceStatusPill.jsx b/resources/js/Components/Devices/DeviceStatusPill.jsx
+index 375469a..916741c 100644
+--- a/resources/js/Components/Devices/DeviceStatusPill.jsx
++++ b/resources/js/Components/Devices/DeviceStatusPill.jsx
+@@ -3,27 +3,39 @@ import { useDeviceSync } from "./DeviceSyncProvider";
+ 
+ /**
+  * Small floating indicator for the shop's device network, with a panel to
+- * name this device, mark it as a print station, and choose where bills and
+- * kitchen tickets print.
++ * name this device, mark it as a print station, choose where bills and
++ * kitchen tickets print, and see exactly why other devices are not linking.
+  */
+ export default function DeviceStatusPill() {
+     const sync = useDeviceSync();
+     const [open, setOpen] = useState(false);
+     const [nameDraft, setNameDraft] = useState(null);
++    const [diagText, setDiagText] = useState("");
++    const [copied, setCopied] = useState(false);
+ 
+     if (!sync.enabled) return null;
+ 
++    const status = sync.status || {};
++    const linkedIds = new Set(sync.peers.map((p) => p.id));
+     const linked = sync.peers.length;
+-    const offline = sync.status?.signaling === false;
++    const online = status.online || [];
++    const notLinked = online.filter((p) => !linkedIds.has(p.id));
++    const serverDown = status.signaling === false;
+ 
+     let dot = "bg-stone-400";
+     let label = "Alone";
+-    if (linked > 0) {
+-        dot = "bg-emerald-500";
+-        label = `${linked} linked`;
+-    } else if (offline) {
++    if (sync.denied) {
++        dot = "bg-red-500";
++        label = "Not allowed";
++    } else if (linked > 0) {
++        dot = notLinked.length ? "bg-amber-500" : "bg-emerald-500";
++        label = notLinked.length ? `${linked} linked, ${notLinked.length} not` : `${linked} linked`;
++    } else if (notLinked.length > 0) {
+         dot = "bg-amber-500";
+-        label = "No link";
++        label = `${notLinked.length} found, not linked`;
++    } else if (serverDown) {
++        dot = "bg-amber-500";
++        label = "No server";
+     }
+ 
+     const commitName = () => {
+@@ -31,6 +43,53 @@ export default function DeviceStatusPill() {
+         setNameDraft(null);
+     };
+ 
++    const copyDiagnostics = async () => {
++        const text = JSON.stringify(sync.getDiagnostics(), null, 2);
++        setDiagText(text);
++        try {
++            await navigator.clipboard.writeText(text);
++            setCopied(true);
++            setTimeout(() => setCopied(false), 2500);
++        } catch {
++            // Clipboard is blocked on non-secure pages. The text box below lets
++            // the user select and copy it by hand.
++            setCopied(false);
++        }
++    };
++
++    // One row per device we know about: linked, or seen by the server.
++    const rows = [
++        ...sync.peers.map((p) => ({ ...p, linked: true })),
++        ...notLinked.map((p) => ({ ...p, linked: false })),
++    ];
++    const connFor = (id) => (status.connections || []).find((c) => c.id === id);
++
++    const describe = (row) => {
++        if (row.linked) {
++            const c = connFor(row.id);
++            return c?.path ? `Direct link (${c.path})` : "Linked";
++        }
++        const c = connFor(row.id);
++        if (!c) return "Seen by the server. Waiting for the connection to start.";
++        if (c.state === "failed") return c.reason || "Connection failed";
++        const last = c.lastFailure ? ` Last attempt failed: ${c.lastFailure.reason}` : "";
++        return `Connecting${c.ice ? ` (${c.ice})` : ""}, attempt ${c.attempts || 1}.${last}`;
++    };
++
++    // Most important explanation first.
++    let hint = null;
++    if (sync.denied) {
++        hint = `The server refused this device${status.httpStatus ? ` (HTTP ${status.httpStatus})` : ""}. Sign out and sign in again. If it keeps happening, this account may not be allowed to run a terminal.`;
++    } else if (status.webrtcUnsupported) {
++        hint = "This browser does not support WebRTC, so devices cannot link. Use an up to date Chrome, Edge, Firefox or Safari.";
++    } else if (serverDown && linked === 0) {
++        hint = "Cannot reach the server to find other devices. Devices that are already linked keep working without internet.";
++    } else if (online.length === 0 && linked === 0) {
++        hint = "No other device is online in this shop right now. The other device must be signed in with Mom&Pop open on screen. Phones pause pages that are in the background or have the screen off.";
++    } else if (notLinked.length > 0 && linked === 0) {
++        hint = "The server can see the other device, but a direct link could not be opened. That is usually the Wi-Fi or hotspot not letting devices reach each other, or hiding their addresses. Try the same normal Wi-Fi on both, switch off any VPN, then tap Copy diagnostics and send it to the developer.";
++    }
++
+     const printerOptions = sync.printers;
+ 
+     return (
+@@ -46,7 +105,7 @@ export default function DeviceStatusPill() {
+             </button>
+ 
+             {open && (
+-                <div className="fixed inset-x-3 bottom-16 z-50 max-h-[70vh] overflow-y-auto rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl sm:inset-x-auto sm:left-3 sm:w-80">
++                <div className="fixed inset-x-3 bottom-16 z-50 max-h-[75vh] overflow-y-auto rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl sm:inset-x-auto sm:left-3 sm:w-80">
+                     <div className="mb-3 flex items-center justify-between">
+                         <h3 className="font-bold text-stone-900">Shop devices</h3>
+                         <button
+@@ -85,45 +144,51 @@ export default function DeviceStatusPill() {
+                     {/* Other devices */}
+                     <div className="mt-4 border-t border-stone-100 pt-3">
+                         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-stone-500">
+-                            Connected devices
++                            Other devices
+                         </p>
+-                        {linked === 0 ? (
+-                            <p className="text-sm text-stone-500">
+-                                {offline
+-                                    ? "Cannot reach the server to find other devices. Devices already linked keep working without internet."
+-                                    : "No other device is linked yet. Open Mom&Pop on another phone or tablet in this shop."}
+-                            </p>
+-                        ) : (
++                        {rows.length > 0 && (
+                             <ul className="space-y-1.5">
+-                                {sync.peers.map((p) => (
+-                                    <li
+-                                        key={p.id}
+-                                        className="flex items-center justify-between rounded-lg bg-stone-50 px-3 py-2 text-sm"
+-                                    >
+-                                        <span className="font-medium text-stone-800">
+-                                            {p.name}
+-                                        </span>
+-                                        {p.canPrint && (
+-                                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+-                                                Printer
++                                {rows.map((p) => (
++                                    <li key={p.id} className="rounded-lg bg-stone-50 px-3 py-2 text-sm">
++                                        <div className="flex items-center justify-between gap-2">
++                                            <span className="font-medium text-stone-800">{p.name}</span>
++                                            <span className="flex items-center gap-1.5">
++                                                {p.canPrint && (
++                                                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
++                                                        Printer
++                                                    </span>
++                                                )}
++                                                <span
++                                                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
++                                                        p.linked
++                                                            ? "bg-emerald-100 text-emerald-800"
++                                                            : "bg-stone-200 text-stone-700"
++                                                    }`}
++                                                >
++                                                    {p.linked ? "Linked" : "Not linked"}
++                                                </span>
+                                             </span>
+-                                        )}
++                                        </div>
++                                        <p className="mt-0.5 text-xs text-stone-500">{describe(p)}</p>
+                                     </li>
+                                 ))}
+                             </ul>
+                         )}
+-                        {sync.status?.failed?.length > 0 && linked === 0 && (
+-                            <p className="mt-2 text-xs text-amber-700">
+-                                Could not link to {sync.status.failed.length} device(s).
+-                                If they are on the same Wi-Fi, check that the router
+-                                is not blocking devices from seeing each other
+-                                (called "client isolation" or "AP isolation").
++                        {hint && (
++                            <p
++                                className={`mt-2 rounded-lg p-2.5 text-xs ${
++                                    sync.denied
++                                        ? "bg-red-50 text-red-800"
++                                        : "bg-amber-50 text-amber-900"
++                                }`}
++                            >
++                                {hint}
+                             </p>
+                         )}
+                     </div>
+ 
+                     {/* Print routing */}
+-                    <div className="mt-4 border-t border-stone-100 pt-3 space-y-3">
++                    <div className="mt-4 space-y-3 border-t border-stone-100 pt-3">
+                         <RouteSelect
+                             label="Print bills on"
+                             value={sync.routes.bill}
+@@ -139,9 +204,7 @@ export default function DeviceStatusPill() {
+                             emptyLabel="Off"
+                         />
+                         {[sync.routes.bill, sync.routes.kitchen].some(
+-                            (id) =>
+-                                id &&
+-                                !printerOptions.some((p) => p.id === id),
++                            (id) => id && !printerOptions.some((p) => p.id === id),
+                         ) && (
+                             <p className="text-xs text-amber-700">
+                                 A chosen printer is offline right now.
+@@ -149,14 +212,39 @@ export default function DeviceStatusPill() {
+                         )}
+                     </div>
+ 
+-                    <button
+-                        type="button"
+-                        onClick={() => sync.syncNow()}
+-                        disabled={linked === 0}
+-                        className="mt-4 min-h-[44px] w-full rounded-lg bg-stone-100 text-sm font-semibold text-stone-700 hover:bg-stone-200 disabled:opacity-40"
+-                    >
+-                        Sync with other devices now
+-                    </button>
++                    <div className="mt-4 grid grid-cols-2 gap-2">
++                        <button
++                            type="button"
++                            onClick={() => sync.syncNow()}
++                            disabled={linked === 0}
++                            className="min-h-[44px] rounded-lg bg-stone-100 text-sm font-semibold text-stone-700 hover:bg-stone-200 disabled:opacity-40"
++                        >
++                            Sync now
++                        </button>
++                        <button
++                            type="button"
++                            onClick={copyDiagnostics}
++                            className="min-h-[44px] rounded-lg bg-stone-100 text-sm font-semibold text-stone-700 hover:bg-stone-200"
++                        >
++                            {copied ? "Copied" : "Copy diagnostics"}
++                        </button>
++                    </div>
++
++                    {diagText && (
++                        <div className="mt-3">
++                            <p className="mb-1 text-xs text-stone-500">
++                                {copied
++                                    ? "Copied. Paste it into a message."
++                                    : "Select all of this text, copy it and send it to the developer."}
++                            </p>
++                            <textarea
++                                readOnly
++                                value={diagText}
++                                onFocus={(e) => e.target.select()}
++                                className="h-32 w-full rounded-lg border border-stone-300 bg-stone-50 p-2 font-mono text-[10px]"
++                            />
++                        </div>
++                    )}
+                 </div>
+             )}
+         </div>
+diff --git a/resources/js/Components/Devices/DeviceSyncProvider.jsx b/resources/js/Components/Devices/DeviceSyncProvider.jsx
+index 941c96d..5df5b4f 100644
+--- a/resources/js/Components/Devices/DeviceSyncProvider.jsx
++++ b/resources/js/Components/Devices/DeviceSyncProvider.jsx
+@@ -201,6 +201,8 @@ function ActiveProvider({ shopId, userName, children }) {
+             canPrint: snap.canPrint,
+             peers: snap.peers,
+             status: snap.status,
++            denied: snap.denied,
++            getDiagnostics: engine.getDiagnostics,
+             routes: snap.routes,
+             printers,
+             setDeviceName: engine.setName,
+diff --git a/resources/js/Sync/engine.js b/resources/js/Sync/engine.js
+index 7e39a33..eee62e2 100644
+--- a/resources/js/Sync/engine.js
++++ b/resources/js/Sync/engine.js
+@@ -78,6 +78,7 @@ export function createEngine({
+     let snapshot = null;
+     let printHost = null;
+     let stopped = false;
++    let denied = false; // the server refused this device (logged out, wrong role)
+ 
+     const getSnapshot = () => {
+         if (snapshot && snapshot.version === version) return snapshot;
+@@ -90,6 +91,7 @@ export function createEngine({
+             routes: { ...routes },
+             peers: state.peers,
+             status: state.status,
++            denied,
+         };
+         return snapshot;
+     };
+@@ -142,7 +144,12 @@ export function createEngine({
+             state.status = status;
+             touch();
+         },
+-        onAuthLost: () => engine.stop(),
++        // Keep the engine (and its explanation) on screen, but mark it unusable
++        // so the next page load builds a fresh one after signing in again.
++        onAuthLost: () => {
++            denied = true;
++            touch();
++        },
+         ...meshOptions,
+     });
+ 
+@@ -180,7 +187,7 @@ export function createEngine({
+             eventListeners.clear();
+         },
+ 
+-        isStopped: () => stopped,
++        isStopped: () => stopped || denied,
+         getSnapshot,
+         subscribe(fn) {
+             stateListeners.add(fn);
+@@ -219,6 +226,28 @@ export function createEngine({
+         },
+ 
+         sendPrint: (targetId, job) => printService.sendPrint(targetId, job),
++
++        /** Everything needed to work out why devices are not linking. */
++        getDiagnostics() {
++            const g = globalThis;
++            const mesh_ = mesh.getDiagnostics();
++            return {
++                when: new Date().toISOString(),
++                device: { id: deviceId, name: self.name, canPrint: self.canPrint, shopId },
++                browser: {
++                    userAgent: g.navigator?.userAgent,
++                    secureContext: g.isSecureContext,
++                    page: g.location?.origin,
++                    hasRTCPeerConnection: typeof g.RTCPeerConnection !== "undefined",
++                    online: g.navigator?.onLine,
++                },
++                linkedPeers: state.peers,
++                routes: { ...routes },
++                denied,
++                status: mesh_.status,
++                log: mesh_.log,
++            };
++        },
+         nameOf,
+         syncNow: () => replicator.syncNow(),
+     };
+diff --git a/resources/js/Sync/rtc.js b/resources/js/Sync/rtc.js
+index 1b1b96a..27d2463 100644
+--- a/resources/js/Sync/rtc.js
++++ b/resources/js/Sync/rtc.js
+@@ -11,23 +11,80 @@
+ //
+ // Glare: when two devices notice each other at the same time, the one with
+ // the smaller device id makes the offer, so they never both offer at once.
++//
++// Everything that happens is also written to a small diagnostic log
++// (getDiagnostics) so "it does not connect" can be traced to a stage:
++// server not reachable, device not seen, offer not answered, or ICE failing.
+ 
+ import { encodeFrames, createReassembler } from "./framing";
+ 
+ const randomId = () =>
+     globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36);
+ 
++const emptyCounts = () => ({ host: 0, srflx: 0, relay: 0, prflx: 0, mdns: 0 });
++
++/** "candidate:1 1 udp 2113937151 abcd.local 54321 typ host" -> { type, mdns } */
++export function classifyCandidate(str) {
++    const s = typeof str === "string" ? str : "";
++    const type = /\styp\s(\w+)/.exec(s)?.[1] || "unknown";
++    const addr = s.split(" ")[4] || "";
++    return { type, mdns: addr.endsWith(".local") };
++}
++
++const count = (counts, c) => {
++    if (counts[c.type] !== undefined) counts[c.type] += 1;
++    if (c.mdns) counts.mdns += 1;
++};
++
++// Setup payloads travel as JSON strings. They used to travel as objects, and
++// the server's whitespace trimming silently cut the trailing line break off
++// every SDP. A JSON string starts and ends with a brace, so it passes
++// through untouched. Objects are still accepted.
++const parsePayload = (p) => {
++    if (typeof p !== "string") return p;
++    try {
++        return JSON.parse(p);
++    } catch {
++        return null;
++    }
++};
++
++async function describePath(pc) {
++    try {
++        if (typeof pc.getStats !== "function") return null;
++        const stats = await pc.getStats();
++        const byId = {};
++        stats.forEach((r) => (byId[r.id] = r));
++        let pair = null;
++        stats.forEach((r) => {
++            if (r.type === "transport" && r.selectedCandidatePairId) pair = byId[r.selectedCandidatePairId];
++        });
++        if (!pair) {
++            stats.forEach((r) => {
++                if (r.type === "candidate-pair" && r.nominated && r.state === "succeeded") pair = r;
++            });
++        }
++        if (!pair) return null;
++        const l = byId[pair.localCandidateId];
++        const r = byId[pair.remoteCandidateId];
++        return `${l?.candidateType || "?"}/${r?.candidateType || "?"}`;
++    } catch {
++        return null;
++    }
++}
++
+ export function createRTCMesh({
+     bus,
+     deviceId,
+     getSelfInfo, // () => ({ name, canPrint, shopId })
+-    signaling, // { poll(self) -> { peers, messages }, send(msg), leave?() }
++    signaling, // { poll(self) -> { peers, messages, ice_servers? }, send(msg), leave?() }
+     RTCPeerConnectionImpl = globalThis.RTCPeerConnection,
+-    iceServers = [], // empty = LAN only (no internet needed to connect)
++    iceServers = [], // extra servers; the server can add more (STUN/TURN) in poll()
+     pollMs = 2000,
+     idlePollMs = 6000,
+     pingMs = 10_000,
+     deadAfterMs = 25_000,
++    connectTimeoutMs = 20_000, // a link still "connecting" after this is retried
+     onStatus = () => {},
+     onAuthLost = () => {}, // the server says this session is no longer allowed
+     now = () => Date.now(),
+@@ -38,16 +95,65 @@ export function createRTCMesh({
+     let pollTimer = null;
+     let pingTimer = null;
+     let stopped = true;
+-    let signalingUp = null; // null unknown, true, false
++    let signalingUp = null; // null unknown, true, false, or "denied"
++    let lastError = null;
++    let httpStatus = null;
+     let announceDirty = true;
++    let serverIce = [];
++    let lastIceSig = "";
++    let lastOnlineSig = "";
++    let pollFailures = 0;
++    const lastFail = new Map(); // peerId -> { reason, at }, kept across retries
++    const attempts = new Map(); // peerId -> number of connection attempts
++    const webrtcSupported = typeof RTCPeerConnectionImpl === "function";
++
++    const iceConfig = () => [...iceServers, ...serverIce];
++
++    // ----------------------------------------------------------- diagnostics
++
++    const logBuf = [];
++    const note = (kind, detail = {}, level = "debug") => {
++        const entry = { t: new Date(now()).toISOString().slice(11, 23), kind, ...detail };
++        logBuf.push(entry);
++        if (logBuf.length > 200) logBuf.shift();
++        try {
++            console[level]?.("[mesh]", kind, detail);
++        } catch {
++            /* no console */
++        }
++    };
++
++    const shortId = (id) => (id ? String(id).slice(0, 8) : "?");
+ 
+     const status = () => ({
++        webrtcUnsupported: !webrtcSupported,
+         signaling: signalingUp,
++        httpStatus,
++        lastError,
+         connecting: [...conns.values()].filter((c) => c.state === "connecting").length,
+         open: [...conns.values()].filter((c) => c.state === "open").length,
+         failed: [...conns.entries()]
+             .filter(([, c]) => c.state === "failed")
+             .map(([id, c]) => ({ id, reason: c.reason })),
++        online: [...known.values()].map((p) => ({
++            id: p.device_id,
++            name: p.name,
++            canPrint: !!p.can_print,
++        })),
++        connections: [...conns.entries()].map(([id, c]) => ({
++            id,
++            name: known.get(id)?.name || bus.peers().find((p) => p.id === id)?.name || null,
++            state: c.state,
++            reason: c.reason,
++            ice: c.ice,
++            initiator: c.initiator,
++            local: { ...c.cands.local },
++            remote: { ...c.cands.remote },
++            path: c.path,
++            attempts: attempts.get(id) || 0,
++            lastFailure: lastFail.get(id) || null,
++        })),
++        iceServers: iceConfig().map((s) => s.urls),
+     });
+     const emitStatus = () => onStatus(status());
+ 
+@@ -61,7 +167,12 @@ export function createRTCMesh({
+ 
+         const drain = () => {
+             while (backlog.length && dc.readyState === "open" && dc.bufferedAmount < HIGH) {
+-                dc.send(backlog.shift());
++                try {
++                    dc.send(backlog.shift());
++                } catch {
++                    backlog.length = 0; // the channel closed under us; teardown follows
++                    return;
++                }
+             }
+         };
+         dc.onbufferedamountlow = drain;
+@@ -82,13 +193,24 @@ export function createRTCMesh({
+     // Raw send on a channel, used before the link is verified.
+     function sendRaw(conn, msg) {
+         if (conn.dc?.readyState !== "open") return;
+-        for (const frame of encodeFrames(msg)) conn.dc.send(frame);
++        try {
++            for (const frame of encodeFrames(msg)) conn.dc.send(frame);
++        } catch {
++            /* channel closed under us; teardown follows */
++        }
+     }
+ 
++    const candidateSummary = (conn) => {
++        const f = (c) =>
++            `host ${c.host}, srflx ${c.srflx}, relay ${c.relay}${c.mdns ? `, mDNS ${c.mdns}` : ""}`;
++        return `this device: ${f(conn.cands.local)}; other device: ${f(conn.cands.remote)}`;
++    };
++
+     // ---------------------------------------------------------- connections
+ 
+     function newConn(peerId, sid, initiator) {
+-        const pc = new RTCPeerConnectionImpl({ iceServers });
++        const pc = new RTCPeerConnectionImpl({ iceServers: iceConfig() });
++        attempts.set(peerId, (attempts.get(peerId) || 0) + 1);
+         const conn = {
+             peerId,
+             sid,
+@@ -97,6 +219,9 @@ export function createRTCMesh({
+             dc: null,
+             state: "connecting",
+             reason: null,
++            ice: null,
++            path: null,
++            cands: { local: emptyCounts(), remote: emptyCounts() },
+             remoteSet: false,
+             pendingIce: [],
+             reassembler: createReassembler(),
+@@ -108,15 +233,25 @@ export function createRTCMesh({
+         };
+ 
+         pc.onicecandidate = (e) => {
+-            if (e.candidate) {
+-                signaling
+-                    .send({
+-                        to: peerId,
+-                        type: "ice",
+-                        sid,
+-                        payload: typeof e.candidate.toJSON === "function" ? e.candidate.toJSON() : e.candidate,
+-                    })
+-                    .catch(() => {});
++            if (!e.candidate) {
++                note("ice gathering finished", { peer: shortId(peerId) });
++                return;
++            }
++            const raw = typeof e.candidate.toJSON === "function" ? e.candidate.toJSON() : e.candidate;
++            count(conn.cands.local, classifyCandidate(raw.candidate));
++            signaling
++                .send({ to: peerId, type: "ice", sid, payload: JSON.stringify(raw) })
++                .catch((err) => note("ice send failed", { peer: shortId(peerId), status: err?.status }, "warn"));
++        };
++
++        pc.oniceconnectionstatechange = () => {
++            if (conns.get(peerId) !== conn) return;
++            conn.ice = pc.iceConnectionState;
++            note("ice state", { peer: shortId(peerId), state: conn.ice });
++            if (conn.ice === "failed") {
++                teardown(peerId, `ICE failed, no network path found (${candidateSummary(conn)})`);
++            } else {
++                emitStatus();
+             }
+         };
+ 
+@@ -130,18 +265,26 @@ export function createRTCMesh({
+         return conn;
+     }
+ 
++    function sendHello(conn) {
++        const self = getSelfInfo();
++        sendRaw(conn, {
++            t: "hello",
++            deviceId,
++            shopId: self.shopId,
++            name: self.name,
++            canPrint: !!self.canPrint,
++        });
++    }
++
+     function wireChannel(conn, dc) {
+         conn.dc = dc;
+         dc.onopen = () => {
+-            const self = getSelfInfo();
+-            sendRaw(conn, {
+-                t: "hello",
+-                deviceId,
+-                shopId: self.shopId,
+-                name: self.name,
+-                canPrint: !!self.canPrint,
+-            });
++            note("data channel open", { peer: shortId(conn.peerId) });
++            sendHello(conn);
+         };
++        // A channel handed to us by the other side may already be open by the
++        // time we attach handlers, in which case onopen would never fire.
++        if (dc.readyState === "open") dc.onopen();
+         dc.onclose = () => {
+             if (conns.get(conn.peerId) === conn) teardown(conn.peerId, "channel closed");
+         };
+@@ -159,6 +302,7 @@ export function createRTCMesh({
+             const self = getSelfInfo();
+             // The only thing standing between two shops' data is this check.
+             if (msg.shopId !== self.shopId || msg.deviceId !== conn.peerId) {
++                note("hello rejected", { peer: shortId(conn.peerId), why: "shop or device mismatch" }, "warn");
+                 conn.reason = "shop mismatch";
+                 teardown(conn.peerId, "shop mismatch");
+                 return;
+@@ -174,6 +318,14 @@ export function createRTCMesh({
+             });
+             conn.link = link;
+             bus.attach(conn.peerId, link);
++            note("link up", { peer: shortId(conn.peerId), name: msg.name }, "info");
++            describePath(conn.pc).then((path) => {
++                if (path && conns.get(conn.peerId) === conn) {
++                    conn.path = path;
++                    note("path", { peer: shortId(conn.peerId), path }, "info");
++                    emitStatus();
++                }
++            });
+             emitStatus();
+             return;
+         }
+@@ -195,6 +347,10 @@ export function createRTCMesh({
+         conn.reason = reason;
+         conn.retryAt = now() + conn.backoff;
+         conn.backoff = Math.min(conn.backoff * 2, 30_000);
++        note("link down", { peer: shortId(peerId), reason, wasOpen }, wasOpen ? "info" : "warn");
++        if (reason !== "stopped" && reason !== "replaced by new offer") {
++            lastFail.set(peerId, { reason, at: new Date(now()).toISOString() });
++        }
+         try {
+             conn.dc && (conn.dc.onclose = null);
+             conn.dc?.close();
+@@ -212,22 +368,28 @@ export function createRTCMesh({
+ 
+     // ------------------------------------------------------------ signaling
+ 
++    const sendSignal = (peerId, type, sid, payload) =>
++        signaling.send({ to: peerId, type, sid, payload: JSON.stringify(payload) });
++
+     async function initiate(peerId) {
+         const sid = randomId();
+-        const conn = newConn(peerId, sid, true);
++        let conn;
++        try {
++            conn = newConn(peerId, sid, true);
++        } catch (err) {
++            note("could not create a connection", { message: err?.message }, "warn");
++            return;
++        }
+         conns.set(peerId, conn);
++        note("making offer", { peer: shortId(peerId) });
+         emitStatus();
+         try {
+             wireChannel(conn, conn.pc.createDataChannel("mesh", { ordered: true }));
+             const offer = await conn.pc.createOffer();
+             await conn.pc.setLocalDescription(offer);
+             const d = conn.pc.localDescription;
+-            await signaling.send({
+-                to: peerId,
+-                type: "offer",
+-                sid,
+-                payload: { type: d.type, sdp: d.sdp },
+-            });
++            await sendSignal(peerId, "offer", sid, { type: d.type, sdp: d.sdp });
++            note("offer sent", { peer: shortId(peerId) });
+         } catch (err) {
+             teardown(peerId, `offer failed: ${err.message}`);
+         }
+@@ -246,10 +408,17 @@ export function createRTCMesh({
+     }
+ 
+     async function handleSignal(msg) {
+-        const { from, type, sid, payload } = msg;
++        const { from, type, sid } = msg;
++        const payload = parsePayload(msg.payload);
+         if (!from || from === deviceId) return;
++        if (!payload) {
++            note("bad signal payload", { peer: shortId(from), type }, "warn");
++            return;
++        }
+ 
+         if (type === "offer") {
++            if (!webrtcSupported) return;
++            note("offer received", { peer: shortId(from) });
+             // A fresh offer always replaces whatever we had with that peer.
+             const old = conns.get(from);
+             if (old && old.sid !== sid) teardown(from, "replaced by new offer");
+@@ -265,7 +434,8 @@ export function createRTCMesh({
+                 const answer = await conn.pc.createAnswer();
+                 await conn.pc.setLocalDescription(answer);
+                 const d = conn.pc.localDescription;
+-                await signaling.send({ to: from, type: "answer", sid, payload: { type: d.type, sdp: d.sdp } });
++                await sendSignal(from, "answer", sid, { type: d.type, sdp: d.sdp });
++                note("answer sent", { peer: shortId(from) });
+             } catch (err) {
+                 teardown(from, `answer failed: ${err.message}`);
+             }
+@@ -275,6 +445,7 @@ export function createRTCMesh({
+         const conn = conns.get(from);
+ 
+         if (type === "answer") {
++            note("answer received", { peer: shortId(from) });
+             if (!conn || conn.sid !== sid || !conn.initiator || conn.remoteSet) return;
+             try {
+                 await conn.pc.setRemoteDescription(payload);
+@@ -287,12 +458,14 @@ export function createRTCMesh({
+         }
+ 
+         if (type === "ice") {
++            const cls = classifyCandidate(payload.candidate);
+             if (!conn || conn.sid !== sid) {
+                 const key = `${from}:${sid}`;
+                 if (!earlyIce.has(key)) earlyIce.set(key, []);
+                 earlyIce.get(key).push(payload);
+                 return;
+             }
++            count(conn.cands.remote, cls);
+             if (!conn.remoteSet) conn.pendingIce.push(payload);
+             else {
+                 try {
+@@ -306,12 +479,18 @@ export function createRTCMesh({
+ 
+     function maybeConnect(peerId) {
+         if (peerId === deviceId) return;
++        if (!webrtcSupported) return; // reported through status().webrtcUnsupported
+         const conn = conns.get(peerId);
+         const needs = !conn || (conn.state === "failed" && now() >= conn.retryAt);
+         // A connection stuck in "connecting" for too long is retried too.
+-        const stuck = conn && conn.state === "connecting" && now() - conn.startedAt > 20_000;
+-        if (stuck) teardown(peerId, "timed out");
+-        if (!needs && !stuck) return;
++        const stuck = conn && conn.state === "connecting" && now() - conn.startedAt > connectTimeoutMs;
++        if (stuck) {
++            // Mark it failed and let the normal backoff decide when to retry,
++            // so the reason stays visible instead of flashing past.
++            teardown(peerId, `timed out waiting for the other device (${candidateSummary(conn)})`);
++            return;
++        }
++        if (!needs) return;
+         // Only the smaller id makes the offer. The other side just waits.
+         if (deviceId < peerId) initiate(peerId);
+     }
+@@ -328,25 +507,54 @@ export function createRTCMesh({
+                 can_print: !!self.canPrint,
+             });
+             if (signalingUp !== true) {
++                note("server reachable", {}, "info");
+                 signalingUp = true;
++                lastError = null;
++                httpStatus = null;
+                 emitStatus();
+             }
++            pollFailures = 0;
+             announceDirty = false;
+ 
++            if (Array.isArray(res.ice_servers)) {
++                const sig = JSON.stringify(res.ice_servers.map((s) => s.urls));
++                if (sig !== lastIceSig) {
++                    lastIceSig = sig;
++                    serverIce = res.ice_servers;
++                    note("ice servers", { urls: res.ice_servers.map((s) => s.urls) }, "info");
++                    emitStatus();
++                }
++            }
++
+             known.clear();
+-            for (const p of res.peers || []) {
+-                known.set(p.device_id, p);
+-                maybeConnect(p.device_id);
++            for (const p of res.peers || []) known.set(p.device_id, p);
++            const onlineSig = [...known.keys()].sort().join(",");
++            if (onlineSig !== lastOnlineSig) {
++                lastOnlineSig = onlineSig;
++                note("devices online", { count: known.size, names: [...known.values()].map((p) => p.name) }, "info");
++                emitStatus();
+             }
++            for (const id of known.keys()) maybeConnect(id);
+             for (const m of res.messages || []) await handleSignal(m);
+         } catch (err) {
+             if ([401, 403, 419].includes(err?.status)) {
+                 // Logged out or not allowed any more. Stop quietly instead of
+-                // hammering the server every two seconds.
++                // hammering the server every two seconds, but say why.
++                note("server refused this device", { status: err.status }, "warn");
++                signalingUp = "denied";
++                httpStatus = err.status;
++                lastError = `The server refused this device (HTTP ${err.status})`;
++                emitStatus();
+                 onAuthLost(err);
+                 return;
+             }
+             // Offline or server down. Existing links are untouched.
++            pollFailures += 1;
++            lastError = err?.message || "request failed";
++            httpStatus = err?.status ?? null;
++            if (pollFailures === 1 || pollFailures % 15 === 0) {
++                note("cannot reach server", { status: err?.status, message: err?.message }, "warn");
++            }
+             if (signalingUp !== false) {
+                 signalingUp = false;
+                 emitStatus();
+@@ -373,6 +581,7 @@ export function createRTCMesh({
+         start() {
+             if (!stopped) return;
+             stopped = false;
++            note("mesh started", { device: shortId(deviceId), webrtc: webrtcSupported }, webrtcSupported ? "debug" : "warn");
+             poll();
+             pingTimer = setInterval(heartbeat, pingMs);
+         },
+@@ -402,6 +611,7 @@ export function createRTCMesh({
+         /** Devices the server says are online, connected or not. */
+         online: () => [...known.values()],
+         status,
++        getDiagnostics: () => ({ log: logBuf.slice(), status: status() }),
+     };
+ }
+ 
+diff --git a/tests/Feature/Devices/DeviceSignalTest.php b/tests/Feature/Devices/DeviceSignalTest.php
+index 7a67cc5..8a17a7e 100644
+--- a/tests/Feature/Devices/DeviceSignalTest.php
++++ b/tests/Feature/Devices/DeviceSignalTest.php
+@@ -89,7 +89,7 @@ public function test_setup_messages_reach_only_the_addressed_device_and_only_onc
+             'to' => $b,
+             'type' => 'offer',
+             'sid' => 'session-1',
+-            'payload' => ['type' => 'offer', 'sdp' => 'v=0...'],
++            'payload' => json_encode(['type' => 'offer', 'sdp' => "v=0\r\n"]),
+         ])->assertNoContent();
+ 
+         $this->poll($user, $a)->assertJsonCount(0, 'messages');
+@@ -99,6 +99,11 @@ public function test_setup_messages_reach_only_the_addressed_device_and_only_onc
+         $first->assertJsonPath('messages.0.from', $a);
+         $first->assertJsonPath('messages.0.type', 'offer');
+         $first->assertJsonPath('messages.0.sid', 'session-1');
++        // delivered exactly as sent, including the trailing line break
++        $this->assertSame(
++            ['type' => 'offer', 'sdp' => "v=0\r\n"],
++            json_decode($first->json('messages.0.payload'), true)
++        );
+ 
+         $this->poll($user, $b)->assertJsonCount(0, 'messages');
+     }
+@@ -119,7 +124,7 @@ public function test_you_cannot_signal_a_device_in_another_shop(): void
+             'to' => $b,
+             'type' => 'ice',
+             'sid' => 's',
+-            'payload' => ['candidate' => 'x'],
++            'payload' => json_encode(['candidate' => 'x']),
+         ])->assertStatus(422)->assertJsonPath('error', 'unknown_peer');
+ 
+         $this->poll($userB, $b)->assertJsonCount(0, 'messages');
+@@ -134,15 +139,48 @@ public function test_signal_input_is_validated(): void
+         $this->poll($user, $a);
+         $this->poll($user, $b);
+ 
+-        $base = ['device_id' => $a, 'to' => $b, 'type' => 'offer', 'sid' => 's', 'payload' => ['x' => 1]];
++        $base = ['device_id' => $a, 'to' => $b, 'type' => 'offer', 'sid' => 's', 'payload' => '{"x":1}'];
+ 
+         $this->actingAs($user)->postJson('/devices/signal', array_merge($base, ['type' => 'shell']))
+             ->assertStatus(422);
+         $this->actingAs($user)->postJson('/devices/signal', array_merge($base, ['to' => $a]))
+             ->assertStatus(422);
+         $this->actingAs($user)->postJson('/devices/signal', array_merge($base, [
+-            'payload' => ['sdp' => str_repeat('x', 25000)],
+-        ]))->assertStatus(413);
++            'payload' => json_encode(['sdp' => str_repeat('x', 25000)]),
++        ]))->assertStatus(422);
++        // an object instead of a JSON string is not accepted
++        $this->actingAs($user)->postJson('/devices/signal', array_merge($base, [
++            'payload' => ['x' => 1],
++        ]))->assertStatus(422);
++    }
++
++    public function test_poll_hands_out_the_configured_ice_servers(): void
++    {
++        config([
++            'mesh.stun_urls' => ['stun:stun.example.org:3478'],
++            'mesh.turn_urls' => ['turn:turn.example.org:3478'],
++            'mesh.turn_secret' => 'shared-secret',
++            'mesh.turn_ttl' => 600,
++        ]);
++        $user = $this->staff($this->shop());
++
++        $res = $this->poll($user, (string) Str::uuid())->assertOk();
++
++        $res->assertJsonPath('ice_servers.0.urls.0', 'stun:stun.example.org:3478');
++        $turn = $res->json('ice_servers.1');
++        $this->assertSame(['turn:turn.example.org:3478'], $turn['urls']);
++        $this->assertStringEndsWith(':' . $user->id, $turn['username']);
++        $this->assertSame(
++            base64_encode(hash_hmac('sha1', $turn['username'], 'shared-secret', true)),
++            $turn['credential']
++        );
++    }
++
++    public function test_turn_is_not_handed_out_without_a_secret(): void
++    {
++        config(['mesh.stun_urls' => [], 'mesh.turn_urls' => ['turn:t:3478'], 'mesh.turn_secret' => null]);
++        $res = $this->poll($this->staff($this->shop()), (string) Str::uuid())->assertOk();
++        $this->assertSame([], $res->json('ice_servers'));
+     }
+ 
+     public function test_leaving_removes_the_device_from_the_list(): void
+diff --git a/tests/js/README.md b/tests/js/README.md
+index c57dfee..ec38cc1 100644
+--- a/tests/js/README.md
++++ b/tests/js/README.md
+@@ -18,9 +18,9 @@ # JavaScript tests for the device mesh
+ What each file covers:
+ 
+ - `sync/mesh.test.js`   clock, framing, merge rules, replication between simulated devices
+-- `sync/rtc.test.js`    real WebRTC links, signaling outage, restart and catch up
++- `sync/rtc.test.js`    real WebRTC links, signaling outage, restart and catch up, diagnostics, ICE servers, failure reporting
+ - `sync/engine.test.js` full engines: rename, print station, remote print, late-item warning
+ - `sync/print.test.js`  print jobs, duplicates, failures, vanished printer
+ - `sync/signaling.test.js`  HTTP client, CSRF headers, 419 handling
+ - `sync/updateTable.test.js` regression test for adding items to an open table
+-- `ui/devices.test.jsx` provider, panel, printing through the host
++- `ui/devices.test.jsx` provider, panel states and hints, printing through the host
+diff --git a/tests/js/sync/engine.test.js b/tests/js/sync/engine.test.js
+index 55183db..fa9c509 100644
+--- a/tests/js/sync/engine.test.js
++++ b/tests/js/sync/engine.test.js
+@@ -148,5 +148,27 @@ describe("engine", () => {
+         });
+         engine.start();
+         await waitFor(() => engine.isStopped(), 3000, "engine stopped itself");
++
++        // and it says why, instead of just going quiet
++        const snap = engine.getSnapshot();
++        expect(snap.denied).toBe(true);
++        expect(snap.status.signaling).toBe("denied");
++        expect(snap.status.httpStatus).toBe(419);
++        const diag = engine.getDiagnostics();
++        expect(diag.denied).toBe(true);
++        expect(diag.log.some((e) => e.kind === "server refused this device")).toBe(true);
+     });
++
++    it("diagnostics describe the device, the browser and what happened", async () => {
++        const server = signalServer();
++        const a = mk("aaaa1111-0000-4000-8000-000000000001", server);
++        const b = mk("bbbb2222-0000-4000-8000-000000000002", server);
++        await waitFor(() => a.engine.getSnapshot().peers.length === 1, 12_000, "linked");
++        const d = a.engine.getDiagnostics();
++        expect(d.device).toMatchObject({ id: "aaaa1111-0000-4000-8000-000000000001", shopId: "shop-1" });
++        expect(d.browser).toHaveProperty("hasRTCPeerConnection");
++        expect(d.linkedPeers.length).toBe(1);
++        expect(d.log.some((e) => e.kind === "link up")).toBe(true);
++        void b;
++    }, 30_000);
+ });
+diff --git a/tests/js/sync/rtc.test.js b/tests/js/sync/rtc.test.js
+index 21d71e2..be6d191 100644
+--- a/tests/js/sync/rtc.test.js
++++ b/tests/js/sync/rtc.test.js
+@@ -24,9 +24,21 @@ async function waitFor(fn, ms = 10_000, label = "condition") {
+ }
+ 
+ // Same behaviour as DeviceSignalController: presence list + per-device mailbox.
++// What Laravel's TrimStrings + ConvertEmptyStringsToNull do to a JSON body.
++const laravelClean = (v) =>
++    typeof v === "string"
++        ? v.trim() === ""
++            ? null
++            : v.trim()
++        : Array.isArray(v)
++          ? v.map(laravelClean)
++          : v && typeof v === "object"
++            ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, laravelClean(x)]))
++            : v;
++
+ function makeSignalServer() {
+     const shops = new Map();
+-    const state = { down: false };
++    const state = { down: false, clean: false, drop: new Set(), iceServers: undefined };
+     const shop = (id) => {
+         if (!shops.has(id)) shops.set(id, { devices: new Map(), mail: new Map() });
+         return shops.get(id);
+@@ -44,13 +56,17 @@ function makeSignalServer() {
+                     s.devices.set(deviceId, { device_id: deviceId, name: self.name, can_print: self.can_print });
+                     if (!s.mail.has(deviceId)) s.mail.set(deviceId, []);
+                     const peers = [...s.devices.values()].filter((d) => d.device_id !== deviceId);
+-                    return { peers, messages: s.mail.get(deviceId).splice(0) };
++                    const res = { peers, messages: s.mail.get(deviceId).splice(0) };
++                    if (state.iceServers) res.ice_servers = state.iceServers;
++                    return res;
+                 },
+                 async send(msg) {
+                     guard();
+                     const s = shop(shopId);
+                     if (!s.devices.has(msg.to)) throw new Error("unknown peer");
+-                    s.mail.get(msg.to)?.push({ from: deviceId, type: msg.type, sid: msg.sid, payload: msg.payload });
++                    if (state.drop.has(msg.type)) return;
++                    const payload = state.clean ? laravelClean(msg.payload) : msg.payload;
++                    s.mail.get(msg.to)?.push({ from: deviceId, type: msg.type, sid: msg.sid, payload });
+                 },
+                 leave() {
+                     shop(shopId).devices.delete(deviceId);
+@@ -61,7 +77,7 @@ function makeSignalServer() {
+ }
+ 
+ let n = 0;
+-function makeNode(id, shopId, server, { canPrint = false } = {}) {
++function makeNode(id, shopId, server, { canPrint = false, mesh: meshOpts = {}, RTC = RTCPeerConnection } = {}) {
+     const db = new Dexie(`rtc-test-${++n}-${Math.random()}`);
+     db.version(11).stores({
+         orders: "id, shop_id, shift_id, user_id, status, created_at, synced_at",
+@@ -85,11 +101,12 @@ function makeNode(id, shopId, server, { canPrint = false } = {}) {
+         deviceId: id,
+         getSelfInfo: () => self,
+         signaling: server.clientFor(shopId, id),
+-        RTCPeerConnectionImpl: RTCPeerConnection,
++        RTCPeerConnectionImpl: RTC,
+         pollMs: 60,
+         idlePollMs: 120,
+         pingMs: 250,
+         deadAfterMs: 1500,
++        ...meshOpts,
+     });
+     rep.start();
+     mesh.start();
+@@ -203,4 +220,79 @@ describe("WebRTC mesh over real data channels", () => {
+         await waitFor(async () => !!(await B2.db.orders.get(o2.id)), 8000, "B catches up");
+         expect((await B2.db.orders.get(o2.id)).total_amount).toBe(50);
+     }, 45_000);
++
++    it("still connects when the server trims whitespace and nulls empty strings like Laravel does", async () => {
++        const server = makeSignalServer();
++        server.state.clean = true;
++        const A = mk("aaaa1111", "shop-1", server);
++        const B = mk("bbbb2222", "shop-1", server);
++        await waitFor(() => A.bus.peerIds().length === 1 && B.bus.peerIds().length === 1, 12_000, "link up");
++        const o = order("shop-1", { total_amount: 4 });
++        await A.db.orders.put(o);
++        await waitFor(async () => !!(await B.db.orders.get(o.id)), 6000, "order on B");
++    }, 30_000);
++
++    it("records each stage in a diagnostic log and lists devices the server can see", async () => {
++        const server = makeSignalServer();
++        const A = mk("aaaa1111", "shop-1", server);
++        const B = mk("bbbb2222", "shop-1", server);
++        await waitFor(() => A.bus.peerIds().length === 1, 12_000, "link up");
++
++        const diag = A.mesh.getDiagnostics();
++        const kinds = diag.log.map((e) => e.kind);
++        expect(kinds).toEqual(expect.arrayContaining(["server reachable", "devices online", "making offer", "link up"]));
++        expect(diag.status.online.map((d) => d.id)).toEqual(["bbbb2222"]);
++        const c = diag.status.connections.find((x) => x.id === "bbbb2222");
++        expect(c.state).toBe("open");
++        expect(c.local.host + c.local.mdns).toBeGreaterThan(0); // we gathered local candidates
++        void B;
++    }, 30_000);
++
++    it("uses the ICE servers the server hands out for new connections", async () => {
++        const configs = [];
++        class SpyRTC extends RTCPeerConnection {
++            constructor(cfg) {
++                super(cfg);
++                configs.push(cfg);
++            }
++        }
++        const server = makeSignalServer();
++        server.state.iceServers = [{ urls: ["stun:stun.example.org:3478"] }];
++        const A = mk("aaaa1111", "shop-1", server, { RTC: SpyRTC });
++        const B = mk("bbbb2222", "shop-1", server);
++        await waitFor(() => A.bus.peerIds().length === 1, 12_000, "link up");
++        expect(configs.length).toBeGreaterThan(0);
++        expect(configs[0].iceServers).toEqual([{ urls: ["stun:stun.example.org:3478"] }]);
++        expect(A.mesh.status().iceServers).toEqual([["stun:stun.example.org:3478"]]);
++        void B;
++    }, 30_000);
++
++    it("explains a connection that never completes instead of failing silently", async () => {
++        const server = makeSignalServer();
++        server.state.drop.add("answer"); // the offer arrives, the answer never gets back
++        const A = mk("aaaa1111", "shop-1", server, { mesh: { connectTimeoutMs: 1200 } });
++        const B = mk("bbbb2222", "shop-1", server);
++        await waitFor(() => A.mesh.status().failed.length > 0, 8000, "A reports a failure");
++
++        const st = A.mesh.status();
++        expect(st.online.map((d) => d.id)).toEqual(["bbbb2222"]); // seen by the server
++        expect(st.failed[0].reason).toMatch(/timed out waiting for the other device/);
++        expect(st.connections[0].lastFailure.reason).toMatch(/host 1/); // includes what was gathered
++        expect(A.bus.peerIds()).toEqual([]);
++
++        // the reason survives the retry that follows
++        await waitFor(() => (A.mesh.status().connections[0]?.attempts || 0) >= 2, 8000, "a second attempt");
++        expect(A.mesh.status().connections[0].lastFailure.reason).toMatch(/timed out/);
++        void B;
++    }, 20_000);
++
++    it("says so when the browser has no WebRTC instead of throwing", async () => {
++        const server = makeSignalServer();
++        const A = mk("aaaa1111", "shop-1", server, { RTC: null });
++        const B = mk("bbbb2222", "shop-1", server, { RTC: null });
++        await waitFor(() => A.mesh.status().online.length === 1, 5000, "sees the other device");
++        expect(A.mesh.status().webrtcUnsupported).toBe(true);
++        expect(A.mesh.status().connections).toEqual([]);
++        void B;
++    }, 15_000);
+ });
+diff --git a/tests/js/sync/signaling.test.js b/tests/js/sync/signaling.test.js
+index 6950325..7918f5b 100644
+--- a/tests/js/sync/signaling.test.js
++++ b/tests/js/sync/signaling.test.js
+@@ -11,7 +11,7 @@ describe("http signaling client", () => {
+             csrfHeaders: () => ({ "X-XSRF-TOKEN": "tok" }),
+         });
+         await sig.poll({ device_id: "dev-1", name: "Bar", can_print: false });
+-        await sig.send({ to: "dev-2", type: "offer", sid: "s", payload: { sdp: "x" } });
++        await sig.send({ to: "dev-2", type: "offer", sid: "s", payload: JSON.stringify({ sdp: "x" }) });
+ 
+         expect(calls[0].url).toBe("/devices/poll");
+         expect(calls[0].init.headers["X-XSRF-TOKEN"]).toBe("tok");
+diff --git a/tests/js/ui/devices.test.jsx b/tests/js/ui/devices.test.jsx
+index 6ec91ab..8a838ab 100644
+--- a/tests/js/ui/devices.test.jsx
++++ b/tests/js/ui/devices.test.jsx
+@@ -132,4 +132,85 @@ describe("DeviceSyncProvider", () => {
+         expect(toastCalls.some((c) => c.kind === "error" && /Unknown print template/.test(c.msg))).toBe(true);
+         expect(printed.length).toBe(0);
+     });
++
++describe("device panel explains what is going wrong", () => {
++    const PEER = "00000000-0000-4000-8000-000000000001";
++    const BIG_ID = "ffffffff-ffff-4fff-8fff-ffffffffffff"; // larger id: waits for the other side's offer
++
++    const pollReturns = (body, ok = true, status = 200) => {
++        globalThis.fetch = vi.fn(async () => ({ ok, status, json: async () => body }));
++    };
++    const open = () => fireEvent.click(screen.getByLabelText("Devices in this shop"));
++    afterEach(() => {
++        delete globalThis.RTCPeerConnection;
++    });
++
++    it("says nobody else is online when the server lists no other device", async () => {
++        globalThis.RTCPeerConnection = class {};
++        pollReturns({ peers: [], messages: [] });
++        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
++        await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
++        open();
++        expect(screen.getByText("Alone")).toBeTruthy();
++        await waitFor(() => expect(screen.getByText(/No other device is online in this shop/)).toBeTruthy());
++    });
++
++    it("shows a device the server can see but that is not linked, and why", async () => {
++        localStorage.setItem("terminal_device_id", BIG_ID);
++        globalThis.RTCPeerConnection = class {};
++        pollReturns({ peers: [{ device_id: PEER, name: "Kitchen", can_print: true }], messages: [] });
++        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
++        await waitFor(() => expect(screen.getByText("1 found, not linked")).toBeTruthy());
++        open();
++        expect(screen.getByText("Kitchen")).toBeTruthy();
++        expect(screen.getByText("Not linked")).toBeTruthy();
++        expect(screen.getByText(/Seen by the server/)).toBeTruthy();
++        expect(screen.getByText(/could not be opened/)).toBeTruthy();
++        delete globalThis.RTCPeerConnection;
++    });
++
++    it("tells the user when the browser has no WebRTC", async () => {
++        localStorage.setItem("terminal_device_id", BIG_ID);
++        delete globalThis.RTCPeerConnection;
++        pollReturns({ peers: [{ device_id: PEER, name: "Kitchen", can_print: false }], messages: [] });
++        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
++        await waitFor(() => expect(screen.getByText("1 found, not linked")).toBeTruthy());
++        open();
++        expect(screen.getByText(/does not support WebRTC/)).toBeTruthy();
++    });
++
++    it("shows a clear message when the server refuses the device", async () => {
++        pollReturns({}, false, 403);
++        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
++        await waitFor(() => expect(screen.getByText("Not allowed")).toBeTruthy());
++        open();
++        expect(screen.getByText(/refused this device \(HTTP 403\)/)).toBeTruthy();
++    });
++
++    it("says the server cannot be reached when requests fail", async () => {
++        globalThis.RTCPeerConnection = class {};
++        globalThis.fetch = vi.fn(async () => { throw new Error("Failed to fetch"); });
++        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
++        await waitFor(() => expect(screen.getByText("No server")).toBeTruthy());
++        open();
++        expect(screen.getByText(/Cannot reach the server/)).toBeTruthy();
++    });
++
++    it("Copy diagnostics produces a report with the device, the browser and the event log", async () => {
++        pollReturns({ peers: [], messages: [] });
++        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
++        await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
++        open();
++        fireEvent.click(screen.getByText("Copy diagnostics"));
++        const box = await waitFor(() => {
++            const el = document.querySelector("textarea");
++            expect(el).toBeTruthy();
++            return el;
++        });
++        const report = JSON.parse(box.value);
++        expect(report.device.id).toBe(localStorage.getItem("terminal_device_id"));
++        expect(report.browser).toHaveProperty("hasRTCPeerConnection");
++        expect(report.log.length).toBeGreaterThan(0);
++    });
++});
+ });
