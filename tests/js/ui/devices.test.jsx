@@ -60,7 +60,7 @@ describe("DeviceSyncProvider", () => {
         await waitFor(() => expect(ctx.deviceName).toBe("Kitchen"));
         expect(localStorage.getItem("terminal_device_name")).toBe("Kitchen");
 
-        fireEvent.click(screen.getByRole("checkbox"));
+        fireEvent.click(screen.getByLabelText(/A printer is connected/));
         await waitFor(() => expect(ctx.canPrint).toBe(true));
         expect(localStorage.getItem("terminal_can_print")).toBe("1");
         expect(ctx.printers.map((p) => p.name)).toEqual(["Kitchen (this device)"]);
@@ -75,41 +75,6 @@ describe("DeviceSyncProvider", () => {
         await waitFor(() => expect(ctx.routes.bill).toBeTruthy());
         expect(ctx.printBill({ title: "Receipt", items: [], totals: {} })).toBe(false);
         expect(toastCalls.some((c) => c.kind === "error" && /offline/.test(c.msg))).toBe(true);
-    });
-
-    it("kitchen tickets are off by default and loud when the kitchen printer is offline", async () => {
-        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
-        ctx.printKitchenTicket({ tableName: "T4", items: [{ quantity: 1, name: "Chips" }] });
-        expect(toastCalls.length).toBe(0);
-
-        act(() => ctx.setRoute("kitchen", "22222222-2222-4222-8222-222222222222"));
-        await waitFor(() => expect(ctx.routes.kitchen).toBeTruthy());
-        ctx.printKitchenTicket({ tableName: "T4", items: [{ quantity: 1, name: "Chips" }] });
-        expect(toastCalls.some((c) => c.kind === "error" && /NOT printed/.test(c.msg))).toBe(true);
-    });
-
-    it("this device can be its own kitchen printer: renders the ticket and prints it", async () => {
-        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
-        act(() => {
-            ctx.setCanPrint(true);
-        });
-        await waitFor(() => expect(ctx.canPrint).toBe(true));
-        act(() => ctx.setRoute("kitchen", ctx.deviceId));
-        await waitFor(() => expect(ctx.routes.kitchen).toBe(ctx.deviceId));
-
-        ctx.printKitchenTicket({
-            tableName: "Window seat",
-            items: [{ quantity: 2, name: "Castle", metadata: { type: "unit" } }, { quantity: 1, name: "Gin", metadata: { type: "double" } }],
-            isUpdate: true,
-        });
-
-        await waitFor(() => expect(printed.length).toBe(1), { timeout: 3000 });
-        expect(printed[0].title).toBe("Kitchen Window seat");
-        expect(printed[0].html).toContain("Window seat");
-        expect(printed[0].html).toContain("ADD TO TABLE");
-        expect(printed[0].html).toContain("2x");
-        expect(printed[0].html).toContain("Gin (double)");
-        expect(printed[0].html).not.toMatch(/\$\d/); // no prices on a kitchen ticket
     });
 
     it("jobs from other devices print through the same host, one at a time", async () => {

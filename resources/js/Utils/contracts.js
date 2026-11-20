@@ -30,6 +30,7 @@
  * @property {string} id
  * @property {string} name
  * @property {string} slug
+ * @property {boolean} [is_kitchen] items in this category also print on the kitchen printer
  * @property {Product[]} products
  */
 

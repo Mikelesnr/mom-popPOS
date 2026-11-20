@@ -23,4 +23,7 @@ What each file covers:
 - `sync/print.test.js`  print jobs, duplicates, failures, vanished printer
 - `sync/signaling.test.js`  HTTP client, CSRF headers, 419 handling
 - `sync/updateTable.test.js` regression test for adding items to an open table
+- `sync/orderNo.test.js` order numbers for kitchen tickets
 - `ui/devices.test.jsx` provider, panel states and hints, printing through the host
+- `ui/kitchen.test.jsx` kitchen categories, the kitchen device, automatic receipts, the manager
+  setting, and Fast Sale, Open Table, Update Table and Close Table end to end

@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\ShotSize;
 use App\Enums\ShopType;
 use App\Services\RegionAvailabilityChecker;
+use App\Services\ShopPrintSettings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rules\Enum;
@@ -68,6 +69,22 @@ class ShopController extends Controller
         );
 
         return back()->with('success', 'Shot size updated.');
+    }
+
+    /**
+     * Shop-wide print behaviour. Authorization lives in routes/shops.php
+     * (managers, shop managers and the owner of this shop).
+     */
+    public function updatePrintSettings(Request $request, Shop $shop)
+    {
+        $validated = $request->validate([
+            'auto_print_receipts' => ['required', 'boolean'],
+        ]);
+
+        $shop->update(['auto_print_receipts' => $validated['auto_print_receipts']]);
+        ShopPrintSettings::forget($shop->id);
+
+        return response()->json(ShopPrintSettings::for($shop->id));
     }
 
     public function getOwnerPortfolio(Request $request)

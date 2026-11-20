@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\URL;
+use App\Models\Shop;
 use App\Models\User;
 use App\Enums\UserRole;
 use App\Services\UnitDeductionService;
@@ -181,6 +182,12 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('join-device-mesh', function (User $user) {
             return !is_null($user->shop_id)
                 && Gate::forUser($user)->allows('operate-pos', $user->shop_id);
+        });
+
+        // Shop print settings (auto-print receipts): owners of the shop and its
+        // managers or shop managers. Built on the 'management' gate.
+        Gate::define('manage-shop-print-settings', function (User $user, Shop $shop) {
+            return Gate::forUser($user)->allows('management', $shop->id);
         });
 
         Gate::define('management', function (User $user, $shopId = null) {

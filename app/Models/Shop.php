@@ -25,6 +25,7 @@ class Shop extends Model
         'latitude',
         'longitude',
         'allowed_radius',
+        'auto_print_receipts',
     ];
 
     /**
@@ -39,6 +40,7 @@ class Shop extends Model
             'latitude' => 'decimal:8',     // Decimal(10,8) precision tracking [cite: 67]
             'longitude' => 'decimal:8',    // Decimal(11,8) precision tracking [cite: 71]
             'allowed_radius' => 'integer', // Radius in meters for Haversine checks [cite: 75, 77]
+            'auto_print_receipts' => 'boolean',
         ];
     }
 

@@ -1,0 +1,2633 @@
+diff --git a/app/Http/Controllers/Devices/DeviceSignalController.php b/app/Http/Controllers/Devices/DeviceSignalController.php
+index 01ec571..1990074 100644
+--- a/app/Http/Controllers/Devices/DeviceSignalController.php
++++ b/app/Http/Controllers/Devices/DeviceSignalController.php
+@@ -3,6 +3,7 @@
+ namespace App\Http\Controllers\Devices;
+ 
+ use App\Http\Controllers\Controller;
++use App\Services\ShopPrintSettings;
+ use Illuminate\Http\Request;
+ use Illuminate\Support\Facades\Cache;
+ use Illuminate\Support\Str;
+@@ -18,6 +19,9 @@
+  *  2. Mailbox: pass the short connection-setup messages (offer, answer, ice)
+  *     from one device to another.
+  *
++ * Each poll also returns the shop's print settings, so a change made by a
++ * manager reaches every device within seconds.
++ *
+  * It never sees order data. Everything is scoped to the caller's own shop_id
+  * and lives in the cache with short expiry, so nothing is stored long term.
+  * Authorization is in routes/devices.php.
+@@ -47,6 +51,7 @@ public function poll(Request $request)
+             'device_id' => ['required', 'uuid'],
+             'name' => ['nullable', 'string', 'max:40'],
+             'can_print' => ['sometimes', 'boolean'],
++            'is_kitchen' => ['sometimes', 'boolean'],
+         ]);
+ 
+         $shopId = $user->shop_id;
+@@ -56,6 +61,7 @@ public function poll(Request $request)
+             'device_id' => $deviceId,
+             'name' => $data['name'] ?? 'Device ' . strtoupper(substr($deviceId, 0, 4)),
+             'can_print' => (bool) ($data['can_print'] ?? false),
++            'is_kitchen' => (bool) ($data['is_kitchen'] ?? false),
+             'user_name' => $user->name,
+         ], self::PRESENCE_TTL);
+ 
+@@ -66,6 +72,10 @@ public function poll(Request $request)
+             'peers' => $this->peers($shopId, $deviceId),
+             'messages' => $this->drainMailbox($shopId, $deviceId),
+             'ice_servers' => $this->iceServers($user),
++            // What gets printed where for this shop (kitchen categories and
++            // whether receipts print automatically). Devices keep the last
++            // value, so they still work when the server is unreachable.
++            'shop_settings' => ShopPrintSettings::for($shopId),
+         ]);
+     }
+ 
+diff --git a/app/Http/Controllers/Inventory/CategoryController.php b/app/Http/Controllers/Inventory/CategoryController.php
+index f8a1e3a..437fe67 100644
+--- a/app/Http/Controllers/Inventory/CategoryController.php
++++ b/app/Http/Controllers/Inventory/CategoryController.php
+@@ -6,6 +6,7 @@
+ use App\Models\Category;
+ use App\Models\Unit;
+ use App\Models\PaymentMethod;
++use App\Services\ShopPrintSettings;
+ use Illuminate\Http\Request;
+ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+ use Illuminate\Support\Str;
+@@ -75,6 +76,7 @@ public function store(Request $request)
+                 ),
+             ],
+             'slug' => ['nullable', 'string', 'max:255'],
++            'is_kitchen' => ['sometimes', 'boolean'],
+         ], [
+             'name.unique' => 'A category with this name already exists.',
+         ]);
+@@ -88,9 +90,12 @@ public function store(Request $request)
+                 'shop_id' => $shopId,
+                 'name' => $validated['name'],
+                 'slug' => Str::slug($validated['name']),
++                'is_kitchen' => (bool) ($validated['is_kitchen'] ?? false),
+             ],
+         );
+ 
++        ShopPrintSettings::forget($shopId);
++
+         return $category;
+     }
+ 
+@@ -115,6 +120,7 @@ public function update(Request $request, Category $category)
+                     ->ignore($category->id),
+             ],
+             'slug' => ['nullable', 'string', 'max:255'],
++            'is_kitchen' => ['sometimes', 'boolean'],
+         ], [
+             'name.unique' => 'A category with this name already exists.',
+         ]);
+@@ -122,8 +128,13 @@ public function update(Request $request, Category $category)
+         $category->update([
+             'name' => $validated['name'],
+             'slug' => Str::slug($validated['name']),
++            'is_kitchen' => array_key_exists('is_kitchen', $validated)
++                ? (bool) $validated['is_kitchen']
++                : $category->is_kitchen,
+         ]);
+ 
++        ShopPrintSettings::forget($category->shop_id);
++
+         return $category;
+     }
+ 
+@@ -141,7 +152,9 @@ public function destroy(Category $category)
+             ], 409);
+         }
+ 
++        $shopId = $category->shop_id;
+         $category->delete();
++        ShopPrintSettings::forget($shopId);
+ 
+         return response()->noContent();
+     }
+diff --git a/app/Http/Controllers/ShopController.php b/app/Http/Controllers/ShopController.php
+index 15d1b96..12958a4 100644
+--- a/app/Http/Controllers/ShopController.php
++++ b/app/Http/Controllers/ShopController.php
+@@ -7,6 +7,7 @@
+ use App\Models\ShotSize;
+ use App\Enums\ShopType;
+ use App\Services\RegionAvailabilityChecker;
++use App\Services\ShopPrintSettings;
+ use Illuminate\Http\Request;
+ use Illuminate\Support\Facades\Auth;
+ use Illuminate\Validation\Rules\Enum;
+@@ -70,6 +71,22 @@ public function updateShotSize(Request $request, Shop $shop)
+         return back()->with('success', 'Shot size updated.');
+     }
+ 
++    /**
++     * Shop-wide print behaviour. Authorization lives in routes/shops.php
++     * (managers, shop managers and the owner of this shop).
++     */
++    public function updatePrintSettings(Request $request, Shop $shop)
++    {
++        $validated = $request->validate([
++            'auto_print_receipts' => ['required', 'boolean'],
++        ]);
++
++        $shop->update(['auto_print_receipts' => $validated['auto_print_receipts']]);
++        ShopPrintSettings::forget($shop->id);
++
++        return response()->json(ShopPrintSettings::for($shop->id));
++    }
++
+     public function getOwnerPortfolio(Request $request)
+     {
+         /** @var User $user */
+diff --git a/app/Http/Resources/CategoryMenuResource.php b/app/Http/Resources/CategoryMenuResource.php
+index 3ff9579..4e5b9a6 100644
+--- a/app/Http/Resources/CategoryMenuResource.php
++++ b/app/Http/Resources/CategoryMenuResource.php
+@@ -16,6 +16,7 @@ public function toArray(Request $request): array
+             'id' => $this->id,
+             'name' => $this->name,
+             'slug' => $this->slug,
++            'is_kitchen' => (bool) $this->is_kitchen,
+             'products' => ProductMenuResource::collection($this->products),
+         ];
+     }
+diff --git a/app/Models/Category.php b/app/Models/Category.php
+index 7bb5f91..5edc913 100644
+--- a/app/Models/Category.php
++++ b/app/Models/Category.php
+@@ -16,8 +16,16 @@ class Category extends Model
+         'shop_id',
+         'name',
+         'slug',
++        'is_kitchen',
+     ];
+ 
++    protected function casts(): array
++    {
++        return [
++            'is_kitchen' => 'boolean',
++        ];
++    }
++
+     /**
+      * Auto-generate slug attribute on creation.
+      */
+diff --git a/app/Models/Shop.php b/app/Models/Shop.php
+index 51330d1..24455a5 100644
+--- a/app/Models/Shop.php
++++ b/app/Models/Shop.php
+@@ -25,6 +25,7 @@ class Shop extends Model
+         'latitude',
+         'longitude',
+         'allowed_radius',
++        'auto_print_receipts',
+     ];
+ 
+     /**
+@@ -39,6 +40,7 @@ protected function casts(): array
+             'latitude' => 'decimal:8',     // Decimal(10,8) precision tracking [cite: 67]
+             'longitude' => 'decimal:8',    // Decimal(11,8) precision tracking [cite: 71]
+             'allowed_radius' => 'integer', // Radius in meters for Haversine checks [cite: 75, 77]
++            'auto_print_receipts' => 'boolean',
+         ];
+     }
+ 
+diff --git a/app/Policies/CategoryPolicy.php b/app/Policies/CategoryPolicy.php
+new file mode 100644
+index 0000000..1557c91
+--- /dev/null
++++ b/app/Policies/CategoryPolicy.php
+@@ -0,0 +1,28 @@
++<?php
++
++namespace App\Policies;
++
++use App\Models\Category;
++use App\Models\User;
++use Illuminate\Support\Facades\Gate;
++
++/**
++ * Who may rename, delete or change a category (including marking it as a
++ * kitchen category): the owner of the shop, and its managers and shop managers.
++ *
++ * CategoryController calls authorize('update' | 'delete', $category). Until this
++ * policy existed those calls had nothing to check against and were refused for
++ * everyone.
++ */
++class CategoryPolicy
++{
++    public function update(User $user, Category $category): bool
++    {
++        return Gate::forUser($user)->allows('management', $category->shop_id);
++    }
++
++    public function delete(User $user, Category $category): bool
++    {
++        return Gate::forUser($user)->allows('management', $category->shop_id);
++    }
++}
+diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvider.php
+index fda3ad8..b2da9fb 100644
+--- a/app/Providers/AppServiceProvider.php
++++ b/app/Providers/AppServiceProvider.php
+@@ -6,6 +6,7 @@
+ use Illuminate\Support\ServiceProvider;
+ use Illuminate\Support\Facades\Gate;
+ use Illuminate\Support\Facades\URL;
++use App\Models\Shop;
+ use App\Models\User;
+ use App\Enums\UserRole;
+ use App\Services\UnitDeductionService;
+@@ -183,6 +184,12 @@ public function boot(): void
+                 && Gate::forUser($user)->allows('operate-pos', $user->shop_id);
+         });
+ 
++        // Shop print settings (auto-print receipts): owners of the shop and its
++        // managers or shop managers. Built on the 'management' gate.
++        Gate::define('manage-shop-print-settings', function (User $user, Shop $shop) {
++            return Gate::forUser($user)->allows('management', $shop->id);
++        });
++
+         Gate::define('management', function (User $user, $shopId = null) {
+             // 1. Owners check the shopsOwned relationship
+             if ($user->role === UserRole::OWNER) {
+diff --git a/app/Services/ShopPrintSettings.php b/app/Services/ShopPrintSettings.php
+new file mode 100644
+index 0000000..3ca4e32
+--- /dev/null
++++ b/app/Services/ShopPrintSettings.php
+@@ -0,0 +1,47 @@
++<?php
++
++namespace App\Services;
++
++use App\Models\Category;
++use App\Models\Shop;
++use Illuminate\Support\Facades\Cache;
++
++/**
++ * The few shop settings that decide what gets printed where, delivered to every
++ * device with its regular device poll (see DeviceSignalController).
++ *
++ *  - auto_print_receipts: print the customer receipt when an order or table is paid
++ *  - kitchen_category_ids: categories whose items go to the kitchen printer
++ *
++ * Cached briefly because devices ask every few seconds. Anything that changes
++ * these values must call forget().
++ */
++class ShopPrintSettings
++{
++    private const TTL_SECONDS = 60;
++
++    public static function for(string $shopId): array
++    {
++        return Cache::remember(self::key($shopId), self::TTL_SECONDS, function () use ($shopId) {
++            return [
++                'auto_print_receipts' => (bool) Shop::query()->whereKey($shopId)->value('auto_print_receipts'),
++                'kitchen_category_ids' => Category::query()
++                    ->where('shop_id', $shopId)
++                    ->where('is_kitchen', true)
++                    ->pluck('id')
++                    ->values()
++                    ->all(),
++            ];
++        });
++    }
++
++    public static function forget(string $shopId): void
++    {
++        Cache::forget(self::key($shopId));
++    }
++
++    private static function key(string $shopId): string
++    {
++        return "shop:{$shopId}:print-settings";
++    }
++}
+diff --git a/database/migrations/2026_11_18_090000_add_kitchen_flag_and_print_settings.php b/database/migrations/2026_11_18_090000_add_kitchen_flag_and_print_settings.php
+new file mode 100644
+index 0000000..d0f81cd
+--- /dev/null
++++ b/database/migrations/2026_11_18_090000_add_kitchen_flag_and_print_settings.php
+@@ -0,0 +1,33 @@
++<?php
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\Schema;
++
++return new class extends Migration
++{
++    public function up(): void
++    {
++        // Items in a kitchen category are sent to the kitchen device's printer.
++        Schema::table('categories', function (Blueprint $table) {
++            $table->boolean('is_kitchen')->default(false)->after('slug');
++        });
++
++        // Print the customer's receipt automatically when an order or table is
++        // paid. Off by default, which keeps today's manual printing unchanged.
++        Schema::table('shops', function (Blueprint $table) {
++            $table->boolean('auto_print_receipts')->default(false);
++        });
++    }
++
++    public function down(): void
++    {
++        Schema::table('categories', function (Blueprint $table) {
++            $table->dropColumn('is_kitchen');
++        });
++
++        Schema::table('shops', function (Blueprint $table) {
++            $table->dropColumn('auto_print_receipts');
++        });
++    }
++};
+diff --git a/dev_docs/device_mesh.md b/dev_docs/device_mesh.md
+index c020d8f..ede44f6 100644
+--- a/dev_docs/device_mesh.md
++++ b/dev_docs/device_mesh.md
+@@ -13,15 +13,58 @@ ## Using it
+ 1. Sign in on each phone or tablet as usual. A small pill appears at the bottom
+    left of the screen ("Alone", "2 linked").
+ 2. Tap it. Give the device a name (Bar, Kitchen, Manager phone).
+-3. On the device that has a printer attached, tick "A printer is connected to
+-   this device".
+-4. On any device, choose where bills print and where kitchen tickets go.
+-   Kitchen tickets are off until a kitchen printer is chosen, so nothing
+-   changes for shops that do not use this.
++3. On the device that has the bar or counter printer attached, tick "A printer
++   is connected to this device". Bills and receipts print where they are rung,
++   or on the device chosen under "Print bills on".
++4. On the device that has the kitchen printer, tick "This is the kitchen
++   device". That is all the setup the kitchen needs.
++5. In Stock, open the category manager and tick "Kitchen category" on the
++   categories that are cooked or prepared in the kitchen (food, grill, and so
++   on). Existing categories have a "Kitchen" button that switches them on or off.
+ 
+ A manager on another phone now sees the same open tables live, and can add
+ items, defer or close a table without logging in on the device that opened it.
+ 
++## Kitchen tickets and receipts
++
++Every bill and receipt prints exactly as before, with all of the items on it,
++bar and kitchen items together. Kitchen tickets are an addition:
++
++- When an order is placed (Fast Sale), a table is opened, or items are added to
++  a table, the items that belong to **kitchen categories** are also sent to every
++  linked device marked "This is the kitchen device". Items from other
++  categories are never on the kitchen ticket.
++- The ticket shows who rang it up, the **table name** (or the **order number**
++  for a fast sale), the time, and the quantities. No prices.
++- Order numbers run 1, 2, 3 within a shift and carry on from orders that arrived
++  from other devices. Two devices that cannot see each other can pick the same
++  number, which is why the staff name and time are on the ticket too.
++- A kitchen device that rings its own sales prints its own ticket.
++- If a kitchen item is ordered and no kitchen device is linked, the sale is still
++  saved and a message says "Kitchen ticket NOT printed" (naming the kitchen if
++  it was seen before). There is deliberately no fallback to another printer,
++  because a ticket that prints at the bar never reaches the kitchen.
++- Which categories are kitchen categories reaches every device within a few
++  seconds, with the regular device poll, so switching one mid-shift does not
++  need anyone to press Sync. The flag that comes with the catalog is only used
++  until the server has been heard once.
++
++### Automatic receipts (managers)
++
++By default nothing changes: receipts print when someone taps Print. A manager,
++shop manager or the shop's owner can turn on "Print the customer's receipt
++automatically when an order or table is paid" in the Shop devices panel. It
++applies to every device in the shop. Businesses that hand every customer a slip
++(fast food) can turn it on so nobody forgets; restaurants that only print a bill
++on request can leave it off to save paper.
++
++- The receipt goes to the chosen bill printer, or prints on the device that took
++  the payment. If the chosen printer is offline it prints on that device.
++- Saving the setting needs internet, because it lives on the server. Devices
++  then pick it up with their next poll, and keep the last value they saw if the
++  server cannot be reached.
++- The server enforces who may change it (gate `manage-shop-print-settings`).
++
+ ## How it fits together
+ 
+     resources/js/Sync/
+@@ -64,8 +107,9 @@ ### Conflict rules
+ ### Printing
+ 
+ A browser cannot see or drive another machine's printer, so the job travels as
+-plain data to a device marked as a print station. That device renders it and
+-opens its own browser print dialog.
++plain data to a device marked as a print station or as the kitchen device. That
++device renders it and opens its own browser print dialog. The same print host
++also prints jobs for this device itself, such as an automatic receipt.
+ 
+ To print without the dialog on a Windows or Linux PC attached to a receipt
+ printer, start Chrome with `--kiosk-printing` and set that printer as the
+@@ -73,7 +117,11 @@ ### Printing
+ 
+ If the chosen bill printer is offline, the bill prints on the current device
+ instead. A kitchen ticket never falls back, because a ticket that prints at the
+-bar never reaches the kitchen. It shows a loud error instead.
++bar never reaches the kitchen. It shows a loud error instead. Printing never
++blocks a sale: the order or table is always saved first.
++
++The kitchen device accepts kitchen jobs without also being a bill printer, so
++ticking "This is the kitchen device" does not make bills print there.
+ 
+ ## If devices do not link
+ 
+@@ -164,6 +212,24 @@ ## Known limits
+ - Peers are trusted as staff of the shop. Server side upload validation remains
+   the authority on what is accepted into the ledger.
+ 
++## What was added on the server
++
++- `categories.is_kitchen` (default off) and `shops.auto_print_receipts` (default
++  off), in one migration. Both default to the behaviour you had before.
++- `CategoryController` accepts `is_kitchen` on create and update, and
++  `CategoryMenuResource` sends it with the catalog.
++- `PATCH /shops/{shop}/print-settings` (gate `manage-shop-print-settings`:
++  owner of the shop, its managers and shop managers).
++- `ShopPrintSettings` returns the shop's settings with every device poll and is
++  cached for a minute. It is cleared whenever a category or the setting changes,
++  so the next poll has the new values.
++- `CategoryPolicy`. `CategoryController` already called `authorize('update')` and
++  `authorize('delete')`, but no policy existed, so as far as the code goes those
++  were refused for everyone. The new policy lets the shop's owner, managers and
++  shop managers rename, delete and change categories, which also lets them mark
++  a category as a kitchen category.
++- Run the migration (`php artisan migrate`) before using any of this.
++
+ ## Tests
+ 
+ `tests/js/README.md` explains how to run the JavaScript tests. They cover the
+diff --git a/resources/js/Components/Devices/DeviceStatusPill.jsx b/resources/js/Components/Devices/DeviceStatusPill.jsx
+index 916741c..67bac45 100644
+--- a/resources/js/Components/Devices/DeviceStatusPill.jsx
++++ b/resources/js/Components/Devices/DeviceStatusPill.jsx
+@@ -12,6 +12,7 @@ export default function DeviceStatusPill() {
+     const [nameDraft, setNameDraft] = useState(null);
+     const [diagText, setDiagText] = useState("");
+     const [copied, setCopied] = useState(false);
++    const [savingSetting, setSavingSetting] = useState(false);
+ 
+     if (!sync.enabled) return null;
+ 
+@@ -140,6 +141,22 @@ export default function DeviceStatusPill() {
+                         />
+                         A printer is connected to this device
+                     </label>
++                    <label className="flex min-h-[44px] items-center gap-3 text-sm text-stone-700">
++                        <input
++                            type="checkbox"
++                            checked={sync.isKitchen}
++                            onChange={(e) => sync.setKitchen(e.target.checked)}
++                            className="h-5 w-5 rounded border-stone-300 text-[#14352E] focus:ring-[#14352E]"
++                        />
++                        This is the kitchen device
++                    </label>
++                    {sync.isKitchen && (
++                        <p className="mb-1 text-xs text-stone-500">
++                            Items from kitchen categories print here automatically, whichever
++                            device takes the order. Bills and receipts still print where
++                            they are rung.
++                        </p>
++                    )}
+ 
+                     {/* Other devices */}
+                     <div className="mt-4 border-t border-stone-100 pt-3">
+@@ -153,6 +170,11 @@ export default function DeviceStatusPill() {
+                                         <div className="flex items-center justify-between gap-2">
+                                             <span className="font-medium text-stone-800">{p.name}</span>
+                                             <span className="flex items-center gap-1.5">
++                                                {p.isKitchen && (
++                                                    <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-semibold text-orange-800">
++                                                        Kitchen
++                                                    </span>
++                                                )}
+                                                 {p.canPrint && (
+                                                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                                                         Printer
+@@ -196,22 +218,44 @@ export default function DeviceStatusPill() {
+                             printers={printerOptions}
+                             emptyLabel="This device (browser print)"
+                         />
+-                        <RouteSelect
+-                            label="Send kitchen tickets to"
+-                            value={sync.routes.kitchen}
+-                            onChange={(v) => sync.setRoute("kitchen", v)}
+-                            printers={printerOptions}
+-                            emptyLabel="Off"
+-                        />
+-                        {[sync.routes.bill, sync.routes.kitchen].some(
+-                            (id) => id && !printerOptions.some((p) => p.id === id),
+-                        ) && (
+-                            <p className="text-xs text-amber-700">
+-                                A chosen printer is offline right now.
+-                            </p>
+-                        )}
++                        {sync.routes.bill &&
++                            !printerOptions.some((p) => p.id === sync.routes.bill) && (
++                                <p className="text-xs text-amber-700">
++                                    The chosen bill printer is offline right now.
++                                </p>
++                            )}
+                     </div>
+ 
++                    {/* Shop-wide settings, managers only */}
++                    {sync.canManageShop && (
++                        <div className="mt-4 border-t border-stone-100 pt-3">
++                            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-stone-500">
++                                Shop settings
++                            </p>
++                            <label className="flex min-h-[44px] items-start gap-3 text-sm text-stone-700">
++                                <input
++                                    type="checkbox"
++                                    checked={sync.shopSettings.autoPrintReceipts}
++                                    disabled={savingSetting}
++                                    onChange={async (e) => {
++                                        setSavingSetting(true);
++                                        await sync.setAutoPrintReceipts(e.target.checked);
++                                        setSavingSetting(false);
++                                    }}
++                                    className="mt-0.5 h-5 w-5 shrink-0 rounded border-stone-300 text-[#14352E] focus:ring-[#14352E]"
++                                />
++                                <span>
++                                    Print the customer's receipt automatically when an order
++                                    or table is paid
++                                    <span className="block text-xs text-stone-500">
++                                        Applies to every device in the shop. Turn it off to
++                                        save paper and print only when asked.
++                                    </span>
++                                </span>
++                            </label>
++                        </div>
++                    )}
++
+                     <div className="mt-4 grid grid-cols-2 gap-2">
+                         <button
+                             type="button"
+diff --git a/resources/js/Components/Devices/DeviceSyncProvider.jsx b/resources/js/Components/Devices/DeviceSyncProvider.jsx
+index 5df5b4f..211cee7 100644
+--- a/resources/js/Components/Devices/DeviceSyncProvider.jsx
++++ b/resources/js/Components/Devices/DeviceSyncProvider.jsx
+@@ -12,18 +12,31 @@ import { usePage } from "@inertiajs/react";
+ import toast from "react-hot-toast";
+ import { db } from "@/Utils/db";
+ import { getEngine } from "@/Sync/engine";
++import { readCsrfHeaders } from "@/Sync/rtc";
+ import { RemotePrintHost } from "./RemotePrintHost";
+ import DeviceStatusPill from "./DeviceStatusPill";
+ 
++// Roles allowed to change shop-wide print settings. The server enforces this
++// too (gate: manage-shop-print-settings); this only decides what to show.
++const SETTINGS_ROLES = ["manager", "shop_manager"];
++
++const NO_SETTINGS = { autoPrintReceipts: false, kitchenCategoryIds: null };
++
+ // What components get when there is no shop (owners, admins) or no provider.
+ const INERT = {
+     enabled: false,
+     peers: [],
+     printers: [],
+-    routes: { bill: "", kitchen: "" },
++    routes: { bill: "" },
+     status: null,
++    shopSettings: NO_SETTINGS,
++    isKitchen: false,
++    knownKitchens: [],
++    canManageShop: false,
++    isKitchenCategory: (category) => !!category?.is_kitchen,
+     printBill: () => false,
+-    printKitchenTicket: () => {},
++    printKitchenTicket: () => false,
++    autoPrintReceipt: () => false,
+     sendPrint: async () => false,
+ };
+ 
+@@ -41,14 +54,19 @@ export default function DeviceSyncProvider({ children }) {
+             </DeviceSyncContext.Provider>
+         );
+     }
++    const role = user.role?.value ?? user.role;
+     return (
+-        <ActiveProvider shopId={user.shop_id} userName={user.name}>
++        <ActiveProvider
++            shopId={user.shop_id}
++            userName={user.name}
++            role={role}
++        >
+             {children}
+         </ActiveProvider>
+     );
+ }
+ 
+-function ActiveProvider({ shopId, userName, children }) {
++function ActiveProvider({ shopId, userName, role, children }) {
+     // The engine lives outside React, so moving between Inertia pages does not
+     // tear down the connections to the other devices.
+     const [engine] = useState(() => getEngine({ shopId, db }));
+@@ -124,6 +142,15 @@ function ActiveProvider({ shopId, userName, children }) {
+         [engine],
+     );
+ 
++    const billJob = useCallback(
++        (props) => ({
++            template: "bill",
++            title: props.title || "Bill",
++            props: { shopName: shopName || "Mom&Pop POS", ...props },
++        }),
++        [shopName],
++    );
++
+     // Returns true when the bill went to another device's printer, so the
+     // caller can skip its own local print. Returns false to print here.
+     const printBill = useCallback(
+@@ -138,59 +165,157 @@ function ActiveProvider({ shopId, userName, children }) {
+             }
+             const name = engine.nameOf(target);
+             engine
+-                .sendPrint(target, {
+-                    template: "bill",
+-                    title: props.title || "Bill",
+-                    props: { shopName: shopName || "Mom&Pop POS", ...props },
+-                })
++                .sendPrint(target, billJob(props))
+                 .then(() => toast.success(`Sent to ${name}`))
+                 .catch((err) => toast.error(`${name}: ${err.message}`));
+             return true;
+         },
+-        [engine, snap, shopName],
++        [engine, snap, billJob],
+     );
+ 
+-    // Off unless a kitchen printer has been chosen on this device.
+-    const printKitchenTicket = useCallback(
+-        ({ tableName, items, isUpdate = false }) => {
+-            const target = snap.routes.kitchen;
+-            if (!target || !items?.length) return;
+-            const name = engine.nameOf(target);
++    // Print the customer's receipt right after an order or table is paid, if a
++    // manager turned that on for the shop. Goes to the chosen bill printer,
++    // or prints on this device. Returns true when it was sent.
++    const autoPrintReceipt = useCallback(
++        (props) => {
++            if (!snap.shopSettings.autoPrintReceipts) return false;
++
++            let target = snap.routes.bill || snap.deviceId;
+             if (target !== snap.deviceId && !snap.peers.some((p) => p.id === target)) {
++                toast.error(
++                    `${engine.nameOf(target)} is offline. Printing the receipt on this device instead.`,
++                );
++                target = snap.deviceId;
++            }
++            const name = engine.nameOf(target);
++            engine
++                .sendPrint(target, billJob(props))
++                .catch((err) => toast.error(`${name}: ${err.message}. Receipt NOT printed.`));
++            return true;
++        },
++        [engine, snap, billJob],
++    );
++
++    // The kitchen devices that can take a ticket right now: this device if it
++    // is the kitchen, plus every linked device that says it is.
++    const kitchenTargets = useMemo(
++        () => [
++            ...(snap.isKitchen ? [{ id: snap.deviceId, name: snap.name }] : []),
++            ...snap.peers.filter((p) => p.isKitchen).map((p) => ({ id: p.id, name: p.name })),
++        ],
++        [snap],
++    );
++
++    // Whether a category's items go to the kitchen. The live list from the
++    // server wins, because it is current within seconds. The flag that came
++    // with the catalog is only a fallback until the server has been heard.
++    const isKitchenCategory = useCallback(
++        (category) => {
++            if (!category) return false;
++            const ids = snap.shopSettings.kitchenCategoryIds;
++            return ids ? ids.includes(String(category.id)) : !!category.is_kitchen;
++        },
++        [snap.shopSettings.kitchenCategoryIds],
++    );
++
++    // Sends the kitchen items (only those) to the kitchen printer. Items that
++    // are not in a kitchen category stay on the normal bill only. Returns true
++    // when a ticket was sent.
++    const printKitchenTicket = useCallback(
++        ({ tableName, orderNo, items, isUpdate = false }) => {
++            const kitchenItems = (items || []).filter((i) => i.is_kitchen);
++            if (kitchenItems.length === 0) return false;
++
++            if (kitchenTargets.length === 0) {
+                 // No fallback to this printer on purpose: a ticket that prints
+                 // at the bar never reaches the kitchen. Say so loudly.
+-                toast.error(`${name} is offline. Kitchen ticket NOT printed.`, {
+-                    duration: 8000,
+-                });
+-                return;
++                const known = snap.knownKitchens.map((k) => k.name).join(", ");
++                toast.error(
++                    known
++                        ? `${known} is offline. Kitchen ticket NOT printed.`
++                        : "No kitchen device is linked. Kitchen ticket NOT printed.",
++                    { duration: 8000 },
++                );
++                return false;
+             }
+-            engine
+-                .sendPrint(target, {
+-                    template: "kitchen",
+-                    title: `Kitchen ${tableName || ""}`.trim(),
+-                    props: {
+-                        shopName: shopName || "Mom&Pop POS",
+-                        tableName,
+-                        staff: userName,
+-                        time: new Date().toLocaleTimeString([], {
+-                            hour: "2-digit",
+-                            minute: "2-digit",
++
++            const job = {
++                template: "kitchen",
++                title: `Kitchen ${tableName || (orderNo ? `order ${orderNo}` : "")}`.trim(),
++                props: {
++                    shopName: shopName || "Mom&Pop POS",
++                    tableName: tableName || null,
++                    orderNo: orderNo ?? null,
++                    staff: userName,
++                    time: new Date().toLocaleTimeString([], {
++                        hour: "2-digit",
++                        minute: "2-digit",
++                    }),
++                    isUpdate,
++                    items: kitchenItems.map((i) => ({
++                        quantity: i.quantity,
++                        name: i.name,
++                        metadata: i.metadata,
++                    })),
++                },
++            };
++
++            for (const t of kitchenTargets) {
++                engine
++                    .sendPrint(t.id, job)
++                    .catch((err) =>
++                        toast.error(`${t.name}: ${err.message}. Kitchen ticket NOT printed.`, {
++                            duration: 8000,
+                         }),
+-                        isUpdate,
+-                        items: items.map((i) => ({
+-                            quantity: i.quantity,
+-                            name: i.name,
+-                            metadata: i.metadata,
+-                        })),
++                    );
++            }
++            return true;
++        },
++        [engine, snap.knownKitchens, kitchenTargets, shopName, userName],
++    );
++
++    const canManageShop = SETTINGS_ROLES.includes(role);
++
++    // Managers only (also enforced by the server). Needs internet, because the
++    // setting lives on the server and reaches every device from there.
++    const setAutoPrintReceipts = useCallback(
++        async (value) => {
++            try {
++                const res = await fetch(`/shops/${shopId}/print-settings`, {
++                    method: "PATCH",
++                    credentials: "same-origin",
++                    headers: {
++                        "Content-Type": "application/json",
++                        Accept: "application/json",
++                        "X-Requested-With": "XMLHttpRequest",
++                        ...readCsrfHeaders(),
+                     },
+-                })
+-                .catch((err) =>
+-                    toast.error(`${name}: ${err.message}. Kitchen ticket NOT printed.`, {
+-                        duration: 8000,
+-                    }),
++                    body: JSON.stringify({ auto_print_receipts: !!value }),
++                });
++                if (!res.ok) {
++                    throw new Error(
++                        res.status === 403
++                            ? "Only managers can change this setting."
++                            : "Could not save the setting.",
++                    );
++                }
++                engine.applyShopSettings(await res.json());
++                toast.success(
++                    value
++                        ? "Receipts will print automatically when an order or table is paid."
++                        : "Automatic receipt printing is off.",
++                );
++                return true;
++            } catch (err) {
++                toast.error(
++                    err instanceof TypeError
++                        ? "Could not save. This setting needs an internet connection."
++                        : err.message,
+                 );
++                return false;
++            }
+         },
+-        [engine, snap, shopName, userName],
++        [engine, shopId],
+     );
+ 
+     const value = useMemo(
+@@ -199,6 +324,10 @@ function ActiveProvider({ shopId, userName, children }) {
+             deviceId: snap.deviceId,
+             deviceName: snap.name,
+             canPrint: snap.canPrint,
++            isKitchen: snap.isKitchen,
++            knownKitchens: snap.knownKitchens,
++            shopSettings: snap.shopSettings,
++            canManageShop,
+             peers: snap.peers,
+             status: snap.status,
+             denied: snap.denied,
+@@ -207,13 +336,28 @@ function ActiveProvider({ shopId, userName, children }) {
+             printers,
+             setDeviceName: engine.setName,
+             setCanPrint: engine.setCanPrint,
++            setKitchen: engine.setKitchen,
+             setRoute: engine.setRoute,
++            setAutoPrintReceipts,
+             syncNow: engine.syncNow,
++            isKitchenCategory,
+             printBill,
+             printKitchenTicket,
++            autoPrintReceipt,
+             sendPrint,
+         }),
+-        [snap, printers, engine, printBill, printKitchenTicket, sendPrint],
++        [
++            snap,
++            printers,
++            engine,
++            canManageShop,
++            setAutoPrintReceipts,
++            isKitchenCategory,
++            printBill,
++            printKitchenTicket,
++            autoPrintReceipt,
++            sendPrint,
++        ],
+     );
+ 
+     return (
+diff --git a/resources/js/Components/Sales/CheckoutOrderButton.jsx b/resources/js/Components/Sales/CheckoutOrderButton.jsx
+index 804aa8c..d90e104 100644
+--- a/resources/js/Components/Sales/CheckoutOrderButton.jsx
++++ b/resources/js/Components/Sales/CheckoutOrderButton.jsx
+@@ -1,5 +1,7 @@
+ import React, { useState } from "react";
+-import { saveOrderLocal, saveOrderItemLocal } from "@/Utils/db";
++import { saveOrderLocal, saveOrderItemLocal, nextOrderNo } from "@/Utils/db";
++import { paymentTotals } from "@/Utils/receipt";
++import { useDeviceSync } from "@/Components/Devices/DeviceSyncProvider";
+ import toast from "react-hot-toast";
+ import PaymentSelectionModal from "@/Components/Sales/PaymentSelectionModal";
+ 
+@@ -11,6 +13,7 @@ export default function CheckoutOrderButton({
+     cartTotal,
+ }) {
+     const [showPayment, setShowPayment] = useState(false);
++    const { printKitchenTicket, autoPrintReceipt } = useDeviceSync();
+ 
+     // finalizeCheckout now receives the paymentData object from modal
+     const finalizeCheckout = async (paymentData) => {
+@@ -19,9 +22,13 @@ export default function CheckoutOrderButton({
+         const now = new Date().toISOString();
+ 
+         try {
++            // Shown on the kitchen ticket so the order can be called out.
++            const orderNo = await nextOrderNo(shiftId);
++
+             // Save order with payment details
+             await saveOrderLocal({
+                 id: orderId,
++                order_no: orderNo,
+                 shop_id: auth.user.shop_id,
+                 shift_id: shiftId,
+                 user_id: auth.user.id,
+@@ -44,7 +51,25 @@ export default function CheckoutOrderButton({
+                     unit_price: item.unit_price,
+                     subtotal: item.subtotal,
+                     metadata: item.metadata || { type: "unit" },
++                    is_kitchen: !!item.is_kitchen,
++                });
++            }
++
++            // Printing must never get in the way of recording the sale.
++            try {
++                // Kitchen items only, to the kitchen device (if any are in the order).
++                printKitchenTicket({ orderNo, items: cart, isUpdate: false });
++                // The customer's receipt, only if a manager turned auto-print on.
++                autoPrintReceipt({
++                    title: `Receipt #${orderNo}`,
++                    date: new Date().toLocaleDateString(),
++                    staff: auth.user.name,
++                    customer: null,
++                    items: cart,
++                    totals: paymentTotals(cartTotal, paymentData),
+                 });
++            } catch (printError) {
++                console.error("Printing after sale failed:", printError);
+             }
+ 
+             onClearCart();
+diff --git a/resources/js/Components/Sales/CheckoutTableButton.jsx b/resources/js/Components/Sales/CheckoutTableButton.jsx
+index 9482c5e..dfe90dc 100644
+--- a/resources/js/Components/Sales/CheckoutTableButton.jsx
++++ b/resources/js/Components/Sales/CheckoutTableButton.jsx
+@@ -44,11 +44,16 @@ export default function CheckoutTableButton({ cart, auth, onClearCart }) {
+                     unit_price: item.unit_price,
+                     subtotal: item.subtotal,
+                     metadata: item.metadata || { type: "unit" },
++                    is_kitchen: !!item.is_kitchen,
+                 });
+             }
+ 
+-            // Only prints if a kitchen printer is chosen in the Shop devices panel.
+-            printKitchenTicket({ tableName, items: cart, isUpdate: false });
++            // Kitchen items only, to the kitchen device. Never blocks opening the table.
++            try {
++                printKitchenTicket({ tableName, items: cart, isUpdate: false });
++            } catch (printError) {
++                console.error("Kitchen ticket failed:", printError);
++            }
+ 
+             onClearCart();
+             setTableName(""); // Reset input
+diff --git a/resources/js/Components/Sales/KitchenTicket.jsx b/resources/js/Components/Sales/KitchenTicket.jsx
+index 16b5b98..fe41962 100644
+--- a/resources/js/Components/Sales/KitchenTicket.jsx
++++ b/resources/js/Components/Sales/KitchenTicket.jsx
+@@ -1,45 +1,54 @@
+ // Kitchen / prep ticket: big, no prices, easy to read from a distance.
++// Shows who rang it up and which table or order it is for.
+ 
+ export const KitchenTicket = ({
+     shopName,
+     tableName,
++    orderNo,
+     staff,
+     time,
+     items = [],
+     isUpdate = false,
+-}) => (
+-    <div className="receipt-print p-6 max-w-sm mx-auto bg-white text-black font-mono">
+-        <p className="text-center text-xs uppercase tracking-widest">
+-            {shopName}
+-        </p>
+-        <h2 className="text-center text-3xl font-black uppercase my-2">
+-            {tableName || "Walk-in"}
+-        </h2>
+-        <p className="text-center text-sm font-bold">
+-            {isUpdate ? "ADD TO TABLE" : "NEW ORDER"}
+-        </p>
+-        <p className="text-xs mt-2">
+-            {time}
+-            {staff ? ` · ${staff}` : ""}
+-        </p>
++}) => {
++    // A table prints its name. A fast sale prints its order number.
++    const label = tableName ? "TABLE" : "ORDER";
++    const reference = tableName || (orderNo ? `#${orderNo}` : "Walk-in");
+ 
+-        <hr className="my-3 border-black" />
++    return (
++        <div className="receipt-print p-6 max-w-sm mx-auto bg-white text-black font-mono">
++            <p className="text-center text-xs uppercase tracking-widest">
++                {shopName}
++            </p>
++            <p className="text-center text-xs font-bold mt-2">{label}</p>
++            <h2 className="text-center text-4xl font-black uppercase leading-tight">
++                {reference}
++            </h2>
++            <p className="text-center text-sm font-bold mt-1">
++                {isUpdate ? "ADD TO TABLE" : "NEW ORDER"}
++            </p>
++            <p className="text-xs mt-2">
++                {time}
++                {staff ? ` · ${staff}` : ""}
++            </p>
+ 
+-        <div className="space-y-1">
+-            {items.map((item, i) => {
+-                const type = item.metadata?.type;
+-                return (
+-                    <div key={i} className="flex gap-3 text-xl font-bold">
+-                        <span className="shrink-0">{item.quantity}x</span>
+-                        <span>
+-                            {item.name}
+-                            {type && type !== "unit" ? ` (${type})` : ""}
+-                        </span>
+-                    </div>
+-                );
+-            })}
+-        </div>
++            <hr className="my-3 border-black" />
++
++            <div className="space-y-1">
++                {items.map((item, i) => {
++                    const type = item.metadata?.type;
++                    return (
++                        <div key={i} className="flex gap-3 text-xl font-bold">
++                            <span className="shrink-0">{item.quantity}x</span>
++                            <span>
++                                {item.name}
++                                {type && type !== "unit" ? ` (${type})` : ""}
++                            </span>
++                        </div>
++                    );
++                })}
++            </div>
+ 
+-        <hr className="my-3 border-black" />
+-    </div>
+-);
++            <hr className="my-3 border-black" />
++        </div>
++    );
++};
+diff --git a/resources/js/Components/Sales/Partials/TicketCart.jsx b/resources/js/Components/Sales/Partials/TicketCart.jsx
+index ca41edd..816eec6 100644
+--- a/resources/js/Components/Sales/Partials/TicketCart.jsx
++++ b/resources/js/Components/Sales/Partials/TicketCart.jsx
+@@ -5,6 +5,7 @@ import { updateTableItemsLocal, closeTableLocal } from "@/Utils/db";
+ import PaymentSelectionModal from "@/Components/Sales/PaymentSelectionModal";
+ import toast from "react-hot-toast";
+ import { useDeviceSync } from "@/Components/Devices/DeviceSyncProvider";
++import { paymentTotals } from "@/Utils/receipt";
+ 
+ export default function TicketCart({
+     cart,
+@@ -15,7 +16,7 @@ export default function TicketCart({
+     onPrint,
+ }) {
+     const [activePaymentContext, setActivePaymentContext] = useState(null);
+-    const { printKitchenTicket } = useDeviceSync();
++    const { printKitchenTicket, autoPrintReceipt } = useDeviceSync();
+ 
+     const cartTotal = cart.reduce(
+         (sum, item) => sum + (parseFloat(item.subtotal) || 0),
+@@ -58,12 +59,17 @@ export default function TicketCart({
+ 
+         try {
+             await updateTableItemsLocal(activeTable.id, newItems);
+-            // Only the new items, and only if a kitchen printer is chosen.
+-            printKitchenTicket({
+-                tableName: activeTable.name,
+-                items: newItems,
+-                isUpdate: true,
+-            });
++            // Only the new items that belong to a kitchen category, sent to the
++            // kitchen device. Never blocks updating the table.
++            try {
++                printKitchenTicket({
++                    tableName: activeTable.name,
++                    items: newItems,
++                    isUpdate: true,
++                });
++            } catch (printError) {
++                console.error("Kitchen ticket failed:", printError);
++            }
+             toast.success("Table updated successfully!");
+             clearCart();
+         } catch (e) {
+@@ -75,6 +81,22 @@ export default function TicketCart({
+         if (!activeTable) return;
+         try {
+             await closeTableLocal(activeTable.id, paymentData, cartTotal);
++
++            // The customer's receipt for the whole table, only if a manager
++            // turned auto-print on. Never blocks closing the table.
++            try {
++                autoPrintReceipt({
++                    title: "Receipt",
++                    date: new Date().toLocaleDateString(),
++                    staff: auth.user.name,
++                    customer: activeTable.name,
++                    items: cart,
++                    totals: paymentTotals(cartTotal, paymentData),
++                });
++            } catch (printError) {
++                console.error("Receipt printing failed:", printError);
++            }
++
+             toast.success("Table closed and paid successfully!");
+             clearCart();
+         } catch (e) {
+diff --git a/resources/js/Components/Sales/TerminalPointOfSale.jsx b/resources/js/Components/Sales/TerminalPointOfSale.jsx
+index 7317456..b3280c4 100644
+--- a/resources/js/Components/Sales/TerminalPointOfSale.jsx
++++ b/resources/js/Components/Sales/TerminalPointOfSale.jsx
+@@ -59,7 +59,7 @@ export default function TerminalPointOfSale() {
+ 
+     // If a bill printer on another device is selected (Shop devices panel),
+     // send the bill there. Returns false to fall through to local printing.
+-    const { printBill } = useDeviceSync();
++    const { printBill, isKitchenCategory } = useDeviceSync();
+     const printBillRemote = () =>
+         printBill({
+             title: activeTable ? "Table Bill" : "Receipt",
+@@ -117,6 +117,7 @@ export default function TerminalPointOfSale() {
+             unit_price: item.unit_price,
+             subtotal: item.subtotal,
+             metadata: item.metadata,
++            is_kitchen: !!item.is_kitchen,
+             placed: item.placed,
+         }));
+         setCart(cartItems);
+@@ -165,6 +166,13 @@ export default function TerminalPointOfSale() {
+     }, [shopId, activeCategory]);
+ 
+     const addToCart = (product, metadata, quantity = 1) => {
++        // Items from a kitchen category are also sent to the kitchen printer
++        // when the order is placed. Everything stays on the normal bill.
++        const owner = categories.find((c) =>
++            c.products?.some((p) => p.id === product.id),
++        );
++        const isKitchenItem = isKitchenCategory(owner);
++
+         setCart((currentCart) => {
+             const uniqueId = Date.now();
+             const cartItemId = `${product.id}-${metadata.type}-${uniqueId}`;
+@@ -185,6 +193,7 @@ export default function TerminalPointOfSale() {
+                     unit_price: parseFloat(price),
+                     subtotal: parseFloat(price) * quantity,
+                     metadata,
++                    is_kitchen: isKitchenItem,
+                     placed: 0,
+                     orderable_id: null,
+                     orderable_type: null,
+diff --git a/resources/js/Components/Stock/CategoryManager.jsx b/resources/js/Components/Stock/CategoryManager.jsx
+index 94311bf..294ff12 100644
+--- a/resources/js/Components/Stock/CategoryManager.jsx
++++ b/resources/js/Components/Stock/CategoryManager.jsx
+@@ -26,6 +26,8 @@ export default function CategoryManager({ open, onClose }) {
+     const [newName, setNewName] = useState("");
+     const [creating, setCreating] = useState(false);
+     const [createError, setCreateError] = useState(null);
++    const [newKitchen, setNewKitchen] = useState(false);
++    const [togglingId, setTogglingId] = useState(null);
+ 
+     const [editingId, setEditingId] = useState(null);
+     const [editingName, setEditingName] = useState("");
+@@ -61,9 +63,11 @@ export default function CategoryManager({ open, onClose }) {
+                 id: crypto.randomUUID(),
+                 name,
+                 slug: slugify(name),
++                is_kitchen: newKitchen,
+             });
+             await db.categories.put(res.data);
+             setNewName("");
++            setNewKitchen(false);
+             toast.success(`"${res.data.name}" added.`);
+         } catch (err) {
+             const message =
+@@ -113,6 +117,35 @@ export default function CategoryManager({ open, onClose }) {
+         }
+     };
+ 
++    // Switch a category between "kitchen" and "bar / counter". Items in a
++    // kitchen category are sent to the kitchen printer when an order is placed.
++    const toggleKitchen = async (cat) => {
++        setTogglingId(cat.id);
++        setEditError(null);
++        try {
++            const res = await axios.put(
++                route("inventory.categories.update", cat.id),
++                {
++                    name: cat.name,
++                    slug: slugify(cat.name),
++                    is_kitchen: !cat.is_kitchen,
++                },
++            );
++            await db.categories.put(res.data);
++            toast.success(
++                res.data.is_kitchen
++                    ? `"${res.data.name}" now prints in the kitchen.`
++                    : `"${res.data.name}" no longer prints in the kitchen.`,
++            );
++        } catch (err) {
++            toast.error(
++                err?.response?.data?.message || "Could not change this category.",
++            );
++        } finally {
++            setTogglingId(null);
++        }
++    };
++
+     const deleteCategory = async (id) => {
+         setDeletingId(id);
+         setDeleteError(null);
+@@ -178,6 +211,21 @@ export default function CategoryManager({ open, onClose }) {
+                             )}
+                         </button>
+                     </div>
++                    <label className="flex items-start gap-2 mt-2.5 text-xs text-gray-600 cursor-pointer">
++                        <input
++                            type="checkbox"
++                            checked={newKitchen}
++                            onChange={(e) => setNewKitchen(e.target.checked)}
++                            className="mt-0.5 rounded border-gray-300"
++                        />
++                        <span>
++                            Kitchen category
++                            <span className="block text-gray-400">
++                                Items in it print on the kitchen printer when an
++                                order is placed.
++                            </span>
++                        </span>
++                    </label>
+                     {createError && (
+                         <p className="text-red-600 text-xs mt-1.5">
+                             {createError}
+@@ -206,9 +254,29 @@ export default function CategoryManager({ open, onClose }) {
+                                         className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"
+                                     />
+                                 ) : (
+-                                    <span className="text-sm text-gray-800 truncate">
+-                                        {cat.name}
+-                                    </span>
++                                    <div className="flex items-center gap-2 min-w-0 flex-1">
++                                        <span className="text-sm text-gray-800 truncate">
++                                            {cat.name}
++                                        </span>
++                                        <button
++                                            type="button"
++                                            onClick={() => toggleKitchen(cat)}
++                                            disabled={togglingId === cat.id}
++                                            aria-pressed={!!cat.is_kitchen}
++                                            title={
++                                                cat.is_kitchen
++                                                    ? "Prints in the kitchen. Tap to turn off."
++                                                    : "Tap to print this category in the kitchen."
++                                            }
++                                            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold border disabled:opacity-50 ${
++                                                cat.is_kitchen
++                                                    ? "bg-orange-100 text-orange-800 border-orange-200"
++                                                    : "bg-white text-gray-400 border-gray-200 hover:text-gray-600"
++                                            }`}
++                                        >
++                                            Kitchen
++                                        </button>
++                                    </div>
+                                 )}
+ 
+                                 <div className="flex items-center gap-1 shrink-0">
+diff --git a/resources/js/Sync/engine.js b/resources/js/Sync/engine.js
+index eee62e2..6f3c423 100644
+--- a/resources/js/Sync/engine.js
++++ b/resources/js/Sync/engine.js
+@@ -17,8 +17,10 @@ const KEYS = {
+     deviceId: "terminal_device_id",
+     name: "terminal_device_name",
+     canPrint: "terminal_can_print",
++    isKitchen: "terminal_is_kitchen",
++    knownKitchens: "terminal_known_kitchens",
++    shopSettings: "terminal_shop_settings",
+     routeBill: "terminal_route_bill",
+-    routeKitchen: "terminal_route_kitchen",
+     hlc: "mesh_hlc",
+ };
+ 
+@@ -62,10 +64,39 @@ export function createEngine({
+         shopId,
+         name: storage.get(KEYS.name) || `Device ${deviceId.slice(0, 4).toUpperCase()}`,
+         canPrint: storage.get(KEYS.canPrint) === "1",
++        // This device has the kitchen printer. Items in kitchen categories are
++        // sent here automatically from every device in the shop.
++        isKitchen: storage.get(KEYS.isKitchen) === "1",
+     };
++    // Where bills print. Kitchen tickets need no setting: they go to every
++    // device that says it is the kitchen.
+     const routes = {
+         bill: storage.get(KEYS.routeBill) || "",
+-        kitchen: storage.get(KEYS.routeKitchen) || "",
++    };
++
++    const readJson = (key, fallback) => {
++        try {
++            const v = JSON.parse(storage.get(key));
++            return v ?? fallback;
++        } catch {
++            return fallback;
++        }
++    };
++
++    // Kitchen devices seen before, so an offline kitchen can be named in the
++    // warning instead of just "no kitchen".
++    let knownKitchens = readJson(KEYS.knownKitchens, []);
++    if (!Array.isArray(knownKitchens)) knownKitchens = [];
++
++    // Settings the server sends with every poll. The last value is kept so
++    // devices behave the same when the server cannot be reached.
++    // kitchenCategoryIds is null until the server has been heard at least once.
++    const savedSettings = readJson(KEYS.shopSettings, {});
++    let shopSettings = {
++        autoPrintReceipts: !!savedSettings.autoPrintReceipts,
++        kitchenCategoryIds: Array.isArray(savedSettings.kitchenCategoryIds)
++            ? savedSettings.kitchenCategoryIds
++            : null,
+     };
+ 
+     const state = {
+@@ -88,6 +119,9 @@ export function createEngine({
+             shopId,
+             name: self.name,
+             canPrint: self.canPrint,
++            isKitchen: self.isKitchen,
++            knownKitchens,
++            shopSettings,
+             routes: { ...routes },
+             peers: state.peers,
+             status: state.status,
+@@ -125,7 +159,8 @@ export function createEngine({
+     const printService = createPrintService({
+         bus,
+         deviceId,
+-        getSelf: () => self,
++        // A kitchen device accepts jobs even if it was never marked as a bill printer.
++        getSelf: () => ({ canPrint: self.canPrint || self.isKitchen }),
+         onJob: (job) =>
+             printHost
+                 ? printHost.enqueue(job)
+@@ -146,6 +181,7 @@ export function createEngine({
+         },
+         // Keep the engine (and its explanation) on screen, but mark it unusable
+         // so the next page load builds a fresh one after signing in again.
++        onShopSettings: (raw) => applyShopSettings(raw),
+         onAuthLost: () => {
+             denied = true;
+             touch();
+@@ -158,10 +194,46 @@ export function createEngine({
+             id: p.id,
+             name: p.name,
+             canPrint: !!p.canPrint,
++            isKitchen: !!p.isKitchen,
+         }));
++        rememberKitchens(state.peers);
+         touch();
+     });
+ 
++    function rememberKitchens(peers) {
++        let next = knownKitchens.slice();
++        for (const p of peers) {
++            const at = next.findIndex((k) => k.id === p.id);
++            if (p.isKitchen) {
++                if (at === -1) next.push({ id: p.id, name: p.name });
++                else if (next[at].name !== p.name) next[at] = { id: p.id, name: p.name };
++            } else if (at !== -1) {
++                next.splice(at, 1); // it stopped being the kitchen
++            }
++        }
++        if (JSON.stringify(next) !== JSON.stringify(knownKitchens)) {
++            knownKitchens = next;
++            storage.set(KEYS.knownKitchens, JSON.stringify(knownKitchens));
++        }
++    }
++
++    function applyShopSettings(raw) {
++        if (!raw || typeof raw !== "object") return;
++        const next = {
++            autoPrintReceipts:
++                raw.auto_print_receipts === undefined
++                    ? shopSettings.autoPrintReceipts
++                    : !!raw.auto_print_receipts,
++            kitchenCategoryIds: Array.isArray(raw.kitchen_category_ids)
++                ? raw.kitchen_category_ids.map(String)
++                : shopSettings.kitchenCategoryIds,
++        };
++        if (JSON.stringify(next) === JSON.stringify(shopSettings)) return;
++        shopSettings = next;
++        storage.set(KEYS.shopSettings, JSON.stringify(shopSettings));
++        touch();
++    }
++
+     const nameOf = (id) =>
+         id === deviceId ? self.name : state.peers.find((p) => p.id === id)?.name || "that device";
+ 
+@@ -212,14 +284,25 @@ export function createEngine({
+             touch();
+         },
+ 
+-        /** kind: "bill" | "kitchen". id: a device id, or "" (this device / off). */
++        /** This device has the kitchen printer. Kitchen items from every device print here. */
++        setKitchen(flag) {
++            self.isKitchen = !!flag;
++            storage.set(KEYS.isKitchen, self.isKitchen ? "1" : "0");
++            mesh.announce();
++            touch();
++        },
++
++        /** kind: "bill". id: a device id, or "" for this device. */
+         setRoute(kind, id) {
+-            if (kind !== "bill" && kind !== "kitchen") return;
+-            routes[kind] = id || "";
+-            storage.set(kind === "bill" ? KEYS.routeBill : KEYS.routeKitchen, routes[kind]);
++            if (kind !== "bill") return;
++            routes.bill = id || "";
++            storage.set(KEYS.routeBill, routes.bill);
+             touch();
+         },
+ 
++        /** Apply settings in the server's shape, e.g. after a manager changes one. */
++        applyShopSettings,
++
+         /** The component that actually renders and prints on this device. */
+         setPrintHost(host) {
+             printHost = host;
+@@ -233,7 +316,15 @@ export function createEngine({
+             const mesh_ = mesh.getDiagnostics();
+             return {
+                 when: new Date().toISOString(),
+-                device: { id: deviceId, name: self.name, canPrint: self.canPrint, shopId },
++                device: {
++                    id: deviceId,
++                    name: self.name,
++                    canPrint: self.canPrint,
++                    isKitchen: self.isKitchen,
++                    shopId,
++                },
++                shopSettings,
++                knownKitchens,
+                 browser: {
+                     userAgent: g.navigator?.userAgent,
+                     secureContext: g.isSecureContext,
+diff --git a/resources/js/Sync/rtc.js b/resources/js/Sync/rtc.js
+index 27d2463..2336d48 100644
+--- a/resources/js/Sync/rtc.js
++++ b/resources/js/Sync/rtc.js
+@@ -76,7 +76,7 @@ async function describePath(pc) {
+ export function createRTCMesh({
+     bus,
+     deviceId,
+-    getSelfInfo, // () => ({ name, canPrint, shopId })
++    getSelfInfo, // () => ({ name, canPrint, isKitchen, shopId })
+     signaling, // { poll(self) -> { peers, messages, ice_servers? }, send(msg), leave?() }
+     RTCPeerConnectionImpl = globalThis.RTCPeerConnection,
+     iceServers = [], // extra servers; the server can add more (STUN/TURN) in poll()
+@@ -87,6 +87,7 @@ export function createRTCMesh({
+     connectTimeoutMs = 20_000, // a link still "connecting" after this is retried
+     onStatus = () => {},
+     onAuthLost = () => {}, // the server says this session is no longer allowed
++    onShopSettings = () => {}, // print settings the server returns with every poll
+     now = () => Date.now(),
+ }) {
+     const conns = new Map(); // peerId -> conn
+@@ -139,6 +140,7 @@ export function createRTCMesh({
+             id: p.device_id,
+             name: p.name,
+             canPrint: !!p.can_print,
++            isKitchen: !!p.is_kitchen,
+         })),
+         connections: [...conns.entries()].map(([id, c]) => ({
+             id,
+@@ -273,6 +275,7 @@ export function createRTCMesh({
+             shopId: self.shopId,
+             name: self.name,
+             canPrint: !!self.canPrint,
++            isKitchen: !!self.isKitchen,
+         });
+     }
+ 
+@@ -315,6 +318,7 @@ export function createRTCMesh({
+                 deviceId: conn.peerId,
+                 name: msg.name || conn.peerId.slice(0, 6),
+                 canPrint: !!msg.canPrint,
++                isKitchen: !!msg.isKitchen,
+             });
+             conn.link = link;
+             bus.attach(conn.peerId, link);
+@@ -333,7 +337,11 @@ export function createRTCMesh({
+         if (msg.t === "ping") return sendRaw(conn, { t: "pong" });
+         if (msg.t === "pong") return;
+         if (msg.t === "info") {
+-            bus.updateInfo(conn.peerId, { name: msg.name, canPrint: !!msg.canPrint });
++            bus.updateInfo(conn.peerId, {
++                name: msg.name,
++                canPrint: !!msg.canPrint,
++                isKitchen: !!msg.isKitchen,
++            });
+             return;
+         }
+         bus.receive(conn.peerId, msg);
+@@ -505,6 +513,7 @@ export function createRTCMesh({
+                 device_id: deviceId,
+                 name: self.name,
+                 can_print: !!self.canPrint,
++                is_kitchen: !!self.isKitchen,
+             });
+             if (signalingUp !== true) {
+                 note("server reachable", {}, "info");
+@@ -526,6 +535,14 @@ export function createRTCMesh({
+                 }
+             }
+ 
++            if (res.shop_settings && typeof res.shop_settings === "object") {
++                try {
++                    onShopSettings(res.shop_settings);
++                } catch (e) {
++                    note("settings handler failed", { message: e?.message }, "warn");
++                }
++            }
++
+             known.clear();
+             for (const p of res.peers || []) known.set(p.device_id, p);
+             const onlineSig = [...known.keys()].sort().join(",");
+@@ -600,7 +617,12 @@ export function createRTCMesh({
+             const self = getSelfInfo();
+             for (const conn of conns.values()) {
+                 if (conn.verified && conn.state === "open") {
+-                    sendRaw(conn, { t: "info", name: self.name, canPrint: !!self.canPrint });
++                    sendRaw(conn, {
++                        t: "info",
++                        name: self.name,
++                        canPrint: !!self.canPrint,
++                        isKitchen: !!self.isKitchen,
++                    });
+                 }
+             }
+             announceDirty = true;
+diff --git a/resources/js/Utils/contracts.js b/resources/js/Utils/contracts.js
+index 5b93866..97caa28 100644
+--- a/resources/js/Utils/contracts.js
++++ b/resources/js/Utils/contracts.js
+@@ -30,6 +30,7 @@
+  * @property {string} id
+  * @property {string} name
+  * @property {string} slug
++ * @property {boolean} [is_kitchen] items in this category also print on the kitchen printer
+  * @property {Product[]} products
+  */
+ 
+diff --git a/resources/js/Utils/db.js b/resources/js/Utils/db.js
+index ec1b4a9..431c25d 100644
+--- a/resources/js/Utils/db.js
++++ b/resources/js/Utils/db.js
+@@ -141,6 +141,19 @@ export const saveOrderLocal = async (orderData) => {
+     });
+ };
+ 
++/**
++ * The next order number for this shift: 1, 2, 3 ... It carries on from orders
++ * that arrived from other devices, so numbers stay in step across the shop.
++ * Two devices that are cut off from each other can pick the same number, which
++ * is why the kitchen ticket also shows who rang the order and when.
++ */
++export const nextOrderNo = async (shiftId) => {
++    if (!shiftId) return 1;
++    const orders = await db.orders.where("shift_id").equals(shiftId).toArray();
++    const highest = orders.reduce((max, o) => Math.max(max, parseInt(o.order_no, 10) || 0), 0);
++    return Math.max(highest, orders.length) + 1;
++};
++
+ export const saveTableLocal = async (tableData) => {
+     return await db.open_tables.put({
+         ...tableData,
+@@ -335,6 +348,7 @@ export const updateTableItemsLocal = async (tableId, newItems) => {
+                 unit_price: item.unit_price,
+                 subtotal: item.subtotal,
+                 metadata: item.metadata || { type: "unit" },
++                is_kitchen: !!item.is_kitchen,
+                 synced_at: null,
+             });
+         }
+@@ -380,6 +394,7 @@ export const syncInventoryLocal = async () => {
+         if (data.categories && data.categories.length > 0) {
+             await db.categories.bulkPut(
+                 data.categories.map((c) => ({
++                    is_kitchen: !!c.is_kitchen,
+                     id: c.id,
+                     shop_id: c.shop_id,
+                     name: c.name,
+diff --git a/resources/js/Utils/receipt.js b/resources/js/Utils/receipt.js
+new file mode 100644
+index 0000000..b4270fd
+--- /dev/null
++++ b/resources/js/Utils/receipt.js
+@@ -0,0 +1,17 @@
++/**
++ * Totals block for a receipt printed after payment. The bill template prints
++ * each entry as "KEY  $value", so cash shows what was handed over and the
++ * change, and any other method shows how it was paid.
++ */
++export const paymentTotals = (total, payment) => {
++    const totals = { total };
++    if (!payment) return totals;
++
++    if (payment.method === "cash") {
++        totals.cash = payment.amount_tendered ?? total;
++        totals.change = payment.change_due ?? 0;
++    } else if (payment.method) {
++        totals[payment.method] = total;
++    }
++    return totals;
++};
+diff --git a/routes/shops.php b/routes/shops.php
+index baae8bd..6312d15 100644
+--- a/routes/shops.php
++++ b/routes/shops.php
+@@ -6,5 +6,8 @@
+ Route::prefix('shops')->group(function () {
+     Route::post('/', [ShopController::class, 'store'])->name('shops.store');
+     Route::patch('/{shop}', [ShopController::class, 'update'])->name('shops.update');
++    Route::patch('/{shop}/print-settings', [ShopController::class, 'updatePrintSettings'])
++        ->middleware('can:manage-shop-print-settings,shop')
++        ->name('shops.print-settings');
+     Route::get('/', [ShopController::class, 'getOwnerPortfolio'])->name('get.shops');
+ });
+\ No newline at end of file
+diff --git a/tests/Feature/KitchenAndPrintSettingsTest.php b/tests/Feature/KitchenAndPrintSettingsTest.php
+new file mode 100644
+index 0000000..1eb9d94
+--- /dev/null
++++ b/tests/Feature/KitchenAndPrintSettingsTest.php
+@@ -0,0 +1,237 @@
++<?php
++
++namespace Tests\Feature;
++
++use App\Enums\ShopType;
++use App\Enums\UserRole;
++use App\Models\Category;
++use App\Models\Shop;
++use App\Models\User;
++use Illuminate\Foundation\Testing\RefreshDatabase;
++use Illuminate\Support\Facades\Cache;
++use Illuminate\Support\Str;
++use Tests\TestCase;
++
++class KitchenAndPrintSettingsTest extends TestCase
++{
++    use RefreshDatabase;
++
++    private function shop(string $name = 'Harare Central'): Shop
++    {
++        return Shop::create([
++            'name' => $name,
++            'shop_type' => ShopType::BAR,
++            'latitude' => -17.8292,
++            'longitude' => 31.0522,
++            'allowed_radius' => 150,
++        ]);
++    }
++
++    private function staff(Shop $shop, UserRole $role): User
++    {
++        return User::factory()->create(['shop_id' => $shop->id, 'role' => $role]);
++    }
++
++    // ------------------------------------------------------------ categories
++
++    public function test_a_category_can_be_created_as_a_kitchen_category(): void
++    {
++        $shop = $this->shop();
++        $manager = $this->staff($shop, UserRole::MANAGER);
++
++        $this->actingAs($manager)
++            ->postJson(route('inventory.categories.store'), ['name' => 'Grill', 'is_kitchen' => true])
++            ->assertOk()
++            ->assertJsonPath('is_kitchen', true);
++
++        $this->assertTrue(Category::where('name', 'Grill')->firstOrFail()->is_kitchen);
++    }
++
++    public function test_a_category_is_not_a_kitchen_category_unless_asked(): void
++    {
++        $shop = $this->shop();
++        $this->actingAs($this->staff($shop, UserRole::MANAGER))
++            ->postJson(route('inventory.categories.store'), ['name' => 'Beers'])
++            ->assertOk()
++            ->assertJsonPath('is_kitchen', false);
++    }
++
++    public function test_a_manager_can_switch_a_category_to_and_from_the_kitchen(): void
++    {
++        $shop = $this->shop();
++        $manager = $this->staff($shop, UserRole::SHOP_MANAGER);
++        $category = Category::create(['shop_id' => $shop->id, 'name' => 'Grill', 'slug' => 'grill']);
++
++        $this->actingAs($manager)
++            ->putJson(route('inventory.categories.update', $category), ['name' => 'Grill', 'is_kitchen' => true])
++            ->assertOk()
++            ->assertJsonPath('is_kitchen', true);
++
++        $this->actingAs($manager)
++            ->putJson(route('inventory.categories.update', $category), ['name' => 'Grill', 'is_kitchen' => false])
++            ->assertOk()
++            ->assertJsonPath('is_kitchen', false);
++    }
++
++    public function test_renaming_a_category_keeps_its_kitchen_flag(): void
++    {
++        $shop = $this->shop();
++        $category = Category::create(['shop_id' => $shop->id, 'name' => 'Grill', 'slug' => 'grill', 'is_kitchen' => true]);
++
++        $this->actingAs($this->staff($shop, UserRole::MANAGER))
++            ->putJson(route('inventory.categories.update', $category), ['name' => 'Braai'])
++            ->assertOk()
++            ->assertJsonPath('is_kitchen', true);
++    }
++
++    public function test_cashiers_and_other_shops_cannot_change_a_category(): void
++    {
++        $shop = $this->shop('A');
++        $other = $this->shop('B');
++        $category = Category::create(['shop_id' => $shop->id, 'name' => 'Grill', 'slug' => 'grill']);
++
++        $this->actingAs($this->staff($shop, UserRole::CASHIER))
++            ->putJson(route('inventory.categories.update', $category), ['name' => 'Grill', 'is_kitchen' => true])
++            ->assertForbidden();
++
++        $this->actingAs($this->staff($other, UserRole::MANAGER))
++            ->putJson(route('inventory.categories.update', $category), ['name' => 'Grill', 'is_kitchen' => true])
++            ->assertForbidden();
++
++        $this->assertFalse($category->fresh()->is_kitchen);
++    }
++
++    public function test_the_catalog_sync_tells_the_till_which_categories_are_kitchen(): void
++    {
++        $shop = $this->shop();
++        Category::create(['shop_id' => $shop->id, 'name' => 'Grill', 'slug' => 'grill', 'is_kitchen' => true]);
++        Category::create(['shop_id' => $shop->id, 'name' => 'Beers', 'slug' => 'beers']);
++
++        $menu = $this->actingAs($this->staff($shop, UserRole::CASHIER))
++            ->getJson('/inventory/sync-catalog')
++            ->assertOk()
++            ->json('menu');
++
++        $byName = collect($menu)->keyBy('name');
++        $this->assertTrue($byName['Grill']['is_kitchen']);
++        $this->assertFalse($byName['Beers']['is_kitchen']);
++    }
++
++    // ---------------------------------------------------- print settings
++
++    public function test_receipts_do_not_print_automatically_until_a_manager_turns_it_on(): void
++    {
++        $this->assertFalse($this->shop()->fresh()->auto_print_receipts);
++    }
++
++    public function test_managers_shop_managers_and_the_owner_can_change_the_setting(): void
++    {
++        $shop = $this->shop();
++        $owner = User::factory()->owner()->create();
++        $shop->owners()->attach($owner->id);
++
++        foreach ([$this->staff($shop, UserRole::MANAGER), $this->staff($shop, UserRole::SHOP_MANAGER), $owner] as $user) {
++            $this->actingAs($user)
++                ->patchJson(route('shops.print-settings', $shop), ['auto_print_receipts' => true])
++                ->assertOk()
++                ->assertJsonPath('auto_print_receipts', true);
++            $this->assertTrue($shop->fresh()->auto_print_receipts);
++
++            $this->actingAs($user)
++                ->patchJson(route('shops.print-settings', $shop), ['auto_print_receipts' => false])
++                ->assertOk()
++                ->assertJsonPath('auto_print_receipts', false);
++        }
++    }
++
++    public function test_cashiers_and_other_shops_cannot_change_the_setting(): void
++    {
++        $shop = $this->shop('A');
++        $other = $this->shop('B');
++
++        foreach ([$this->staff($shop, UserRole::CASHIER), $this->staff($other, UserRole::MANAGER)] as $user) {
++            $this->actingAs($user)
++                ->patchJson(route('shops.print-settings', $shop), ['auto_print_receipts' => true])
++                ->assertForbidden();
++        }
++        $this->assertFalse($shop->fresh()->auto_print_receipts);
++    }
++
++    public function test_the_setting_must_be_a_boolean(): void
++    {
++        $shop = $this->shop();
++        $this->actingAs($this->staff($shop, UserRole::MANAGER))
++            ->patchJson(route('shops.print-settings', $shop), ['auto_print_receipts' => 'maybe'])
++            ->assertStatus(422);
++        $this->actingAs($this->staff($shop, UserRole::MANAGER))
++            ->patchJson(route('shops.print-settings', $shop), [])
++            ->assertStatus(422);
++    }
++
++    // ------------------------------------------- reaching the devices
++
++    private function poll(User $user, string $deviceId, array $extra = [])
++    {
++        return $this->actingAs($user)->postJson('/devices/poll', array_merge([
++            'device_id' => $deviceId,
++            'name' => 'Bar',
++        ], $extra));
++    }
++
++    public function test_devices_get_the_shop_settings_with_every_poll(): void
++    {
++        $shop = $this->shop();
++        $grill = Category::create(['shop_id' => $shop->id, 'name' => 'Grill', 'slug' => 'grill', 'is_kitchen' => true]);
++        Category::create(['shop_id' => $shop->id, 'name' => 'Beers', 'slug' => 'beers']);
++
++        $res = $this->poll($this->staff($shop, UserRole::CASHIER), (string) Str::uuid())->assertOk();
++
++        $res->assertJsonPath('shop_settings.auto_print_receipts', false);
++        $this->assertSame([$grill->id], $res->json('shop_settings.kitchen_category_ids'));
++    }
++
++    public function test_a_change_reaches_devices_on_their_next_poll_even_though_polls_are_cached(): void
++    {
++        $shop = $this->shop();
++        $manager = $this->staff($shop, UserRole::MANAGER);
++        $device = (string) Str::uuid();
++
++        $this->poll($manager, $device)->assertJsonPath('shop_settings.auto_print_receipts', false);
++
++        $this->actingAs($manager)
++            ->patchJson(route('shops.print-settings', $shop), ['auto_print_receipts' => true])
++            ->assertOk();
++        $this->poll($manager, $device)->assertJsonPath('shop_settings.auto_print_receipts', true);
++
++        $category = Category::create(['shop_id' => $shop->id, 'name' => 'Grill', 'slug' => 'grill']);
++        $this->actingAs($manager)
++            ->putJson(route('inventory.categories.update', $category), ['name' => 'Grill', 'is_kitchen' => true])
++            ->assertOk();
++        $this->assertSame([$category->id], $this->poll($manager, $device)->json('shop_settings.kitchen_category_ids'));
++    }
++
++    public function test_one_shops_settings_never_reach_another_shop(): void
++    {
++        $a = $this->shop('A');
++        $b = $this->shop('B');
++        Category::create(['shop_id' => $a->id, 'name' => 'Grill', 'slug' => 'grill', 'is_kitchen' => true]);
++        $a->update(['auto_print_receipts' => true]);
++        Cache::flush();
++
++        $res = $this->poll($this->staff($b, UserRole::CASHIER), (string) Str::uuid())->assertOk();
++        $res->assertJsonPath('shop_settings.auto_print_receipts', false);
++        $this->assertSame([], $res->json('shop_settings.kitchen_category_ids'));
++    }
++
++    public function test_the_kitchen_device_is_flagged_for_the_other_devices(): void
++    {
++        $shop = $this->shop();
++        $kitchen = (string) Str::uuid();
++        $bar = (string) Str::uuid();
++
++        $this->poll($this->staff($shop, UserRole::CASHIER), $kitchen, ['name' => 'Kitchen', 'is_kitchen' => true]);
++        $res = $this->poll($this->staff($shop, UserRole::CASHIER), $bar);
++
++        $res->assertJsonPath('peers.0.device_id', $kitchen)->assertJsonPath('peers.0.is_kitchen', true);
++    }
++}
+diff --git a/tests/js/README.md b/tests/js/README.md
+index ec38cc1..6a78dfc 100644
+--- a/tests/js/README.md
++++ b/tests/js/README.md
+@@ -23,4 +23,7 @@ # JavaScript tests for the device mesh
+ - `sync/print.test.js`  print jobs, duplicates, failures, vanished printer
+ - `sync/signaling.test.js`  HTTP client, CSRF headers, 419 handling
+ - `sync/updateTable.test.js` regression test for adding items to an open table
++- `sync/orderNo.test.js` order numbers for kitchen tickets
+ - `ui/devices.test.jsx` provider, panel states and hints, printing through the host
++- `ui/kitchen.test.jsx` kitchen categories, the kitchen device, automatic receipts, the manager
++  setting, and Fast Sale, Open Table, Update Table and Close Table end to end
+diff --git a/tests/js/sync/engine.test.js b/tests/js/sync/engine.test.js
+index fa9c509..88b9f9d 100644
+--- a/tests/js/sync/engine.test.js
++++ b/tests/js/sync/engine.test.js
+@@ -20,14 +20,21 @@ async function waitFor(fn, ms = 10_000, label = "condition") {
+ function signalServer() {
+     const mail = new Map();
+     const devices = new Map();
+-    return (deviceId) => ({
++    const factory = (deviceId) => ({
+         async poll(self) {
+-            devices.set(deviceId, { device_id: deviceId, name: self.name, can_print: self.can_print });
++            devices.set(deviceId, {
++                device_id: deviceId,
++                name: self.name,
++                can_print: self.can_print,
++                is_kitchen: self.is_kitchen,
++            });
+             if (!mail.has(deviceId)) mail.set(deviceId, []);
+-            return {
++            const res = {
+                 peers: [...devices.values()].filter((d) => d.device_id !== deviceId),
+                 messages: mail.get(deviceId).splice(0),
+             };
++            if (factory.settings) res.shop_settings = factory.settings;
++            return res;
+         },
+         async send(m) {
+             mail.get(m.to)?.push({ from: deviceId, type: m.type, sid: m.sid, payload: m.payload });
+@@ -36,6 +43,9 @@ function signalServer() {
+             devices.delete(deviceId);
+         },
+     });
++    factory.settings = null; // what the server returns as shop_settings
++    factory.forget = (deviceId) => devices.delete(deviceId);
++    return factory;
+ }
+ 
+ const memoryStorage = (init = {}) => {
+@@ -171,4 +181,93 @@ describe("engine", () => {
+         expect(d.log.some((e) => e.kind === "link up")).toBe(true);
+         void b;
+     }, 30_000);
++
++    it("the kitchen flag reaches the other device over the real link, and is remembered after the kitchen goes away", async () => {
++        const server = signalServer();
++        const bar = mk("aaaa1111-0000-4000-8000-000000000001", server);
++        const kitchen = mk("bbbb2222-0000-4000-8000-000000000002", server);
++        await waitFor(() => bar.engine.getSnapshot().peers.length === 1, 12_000, "linked");
++        expect(bar.engine.getSnapshot().peers[0].isKitchen).toBe(false);
++
++        kitchen.engine.setName("Kitchen");
++        kitchen.engine.setKitchen(true);
++        await waitFor(() => bar.engine.getSnapshot().peers[0]?.isKitchen === true, 6000, "bar sees the kitchen");
++        expect(bar.engine.getSnapshot().knownKitchens).toEqual([
++            { id: "bbbb2222-0000-4000-8000-000000000002", name: "Kitchen" },
++        ]);
++
++        // the kitchen device is switched off: it is gone from the peers but remembered
++        kitchen.engine.stop();
++        server.forget("bbbb2222-0000-4000-8000-000000000002");
++        await waitFor(() => bar.engine.getSnapshot().peers.length === 0, 8000, "kitchen gone");
++        expect(bar.engine.getSnapshot().knownKitchens.map((k) => k.name)).toEqual(["Kitchen"]);
++
++        // and it shows up in the diagnostics too
++        expect(bar.engine.getDiagnostics().knownKitchens.length).toBe(1);
++    }, 40_000);
++
++    it("a device that stops being the kitchen is forgotten", async () => {
++        const server = signalServer();
++        const bar = mk("aaaa1111-0000-4000-8000-000000000001", server);
++        const kitchen = mk("bbbb2222-0000-4000-8000-000000000002", server);
++        await waitFor(() => bar.engine.getSnapshot().peers.length === 1, 12_000, "linked");
++        kitchen.engine.setKitchen(true);
++        await waitFor(() => bar.engine.getSnapshot().knownKitchens.length === 1, 6000, "known");
++        kitchen.engine.setKitchen(false);
++        await waitFor(() => bar.engine.getSnapshot().knownKitchens.length === 0, 6000, "forgotten");
++    }, 30_000);
++
++    it("a kitchen device takes print jobs even though it was never marked as a bill printer", async () => {
++        const server = signalServer();
++        const bar = mk("aaaa1111-0000-4000-8000-000000000001", server);
++        const kitchen = mk("bbbb2222-0000-4000-8000-000000000002", server);
++        const printed = [];
++        kitchen.engine.setPrintHost({ enqueue: async (job) => printed.push(job) });
++        kitchen.engine.setKitchen(true); // canPrint stays false
++        await waitFor(() => bar.engine.getSnapshot().peers[0]?.isKitchen === true, 12_000, "kitchen seen");
++        expect(bar.engine.getSnapshot().peers[0].canPrint).toBe(false);
++
++        await bar.engine.sendPrint(kitchen.id, { template: "kitchen", props: { tableName: "T4" } });
++        expect(printed.length).toBe(1);
++    }, 30_000);
++
++    it("a device that is neither a printer nor the kitchen still refuses print jobs", async () => {
++        const server = signalServer();
++        const bar = mk("aaaa1111-0000-4000-8000-000000000001", server);
++        const other = mk("bbbb2222-0000-4000-8000-000000000002", server);
++        await waitFor(() => bar.engine.getSnapshot().peers.length === 1, 12_000, "linked");
++        await expect(bar.engine.sendPrint(other.id, { template: "kitchen", props: {} })).rejects.toThrow(/not set up as a printer/);
++    }, 30_000);
++
++    it("applies the print settings the server returns with each poll, and keeps them", async () => {
++        const server = signalServer();
++        server.settings = { auto_print_receipts: true, kitchen_category_ids: [7, "c2"] };
++        const a = mk("aaaa1111-0000-4000-8000-000000000001", server);
++        await waitFor(() => a.engine.getSnapshot().shopSettings.autoPrintReceipts === true, 6000, "settings applied");
++        expect(a.engine.getSnapshot().shopSettings.kitchenCategoryIds).toEqual(["7", "c2"]); // ids compared as text
++        expect(a.engine.getDiagnostics().shopSettings.autoPrintReceipts).toBe(true);
++
++        // a manager turns it off; the next poll brings that to the device
++        server.settings = { auto_print_receipts: false, kitchen_category_ids: ["c2"] };
++        await waitFor(() => a.engine.getSnapshot().shopSettings.autoPrintReceipts === false, 8000, "change applied");
++        expect(a.engine.getSnapshot().shopSettings.kitchenCategoryIds).toEqual(["c2"]);
++    }, 30_000);
++
++    it("starts from the last settings it saw, before the server has answered", async () => {
++        const server = signalServer();
++        const stored = { terminal_shop_settings: JSON.stringify({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"] }), terminal_known_kitchens: JSON.stringify([{ id: "k", name: "Pass" }]) };
++        const a = mk("aaaa1111-0000-4000-8000-000000000001", server, stored);
++        const snap = a.engine.getSnapshot();
++        expect(snap.shopSettings).toEqual({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"] });
++        expect(snap.knownKitchens).toEqual([{ id: "k", name: "Pass" }]);
++    });
++
++    it("kitchen tickets no longer need a chosen printer, and the old setting is ignored", async () => {
++        const server = signalServer();
++        const a = mk("aaaa1111-0000-4000-8000-000000000001", server, { terminal_route_kitchen: "some-old-device" });
++        a.engine.setRoute("kitchen", "x"); // no longer a route
++        expect(a.engine.getSnapshot().routes).toEqual({ bill: "" });
++        a.engine.setRoute("bill", "dev-1");
++        expect(a.engine.getSnapshot().routes.bill).toBe("dev-1");
++    });
+ });
+diff --git a/tests/js/sync/orderNo.test.js b/tests/js/sync/orderNo.test.js
+new file mode 100644
+index 0000000..5333e5b
+--- /dev/null
++++ b/tests/js/sync/orderNo.test.js
+@@ -0,0 +1,42 @@
++// Order numbers used on kitchen tickets, against the real Utils/db helpers.
++import "fake-indexeddb/auto";
++import { db, nextOrderNo, saveOrderLocal } from "../../../resources/js/Utils/db";
++
++const order = (shift, over = {}) => ({
++    id: crypto.randomUUID(), shop_id: "s", shift_id: shift, user_id: "u",
++    total_amount: 1, payment_method: "cash", status: "paid", ...over,
++});
++
++beforeEach(async () => {
++    await db.orders.clear();
++});
++
++describe("nextOrderNo", () => {
++    it("starts at 1 and counts up within a shift", async () => {
++        expect(await nextOrderNo("shift-1")).toBe(1);
++        await saveOrderLocal(order("shift-1", { order_no: 1 }));
++        expect(await nextOrderNo("shift-1")).toBe(2);
++        await saveOrderLocal(order("shift-1", { order_no: 2 }));
++        expect(await nextOrderNo("shift-1")).toBe(3);
++    });
++
++    it("starts again from 1 on a new shift", async () => {
++        await saveOrderLocal(order("shift-1", { order_no: 9 }));
++        expect(await nextOrderNo("shift-2")).toBe(1);
++    });
++
++    it("carries on from orders that arrived from another device, so numbers stay in step", async () => {
++        await saveOrderLocal(order("shift-1", { order_no: 14 }));
++        expect(await nextOrderNo("shift-1")).toBe(15);
++    });
++
++    it("copes with older orders that have no number", async () => {
++        await saveOrderLocal(order("shift-1"));
++        await saveOrderLocal(order("shift-1"));
++        expect(await nextOrderNo("shift-1")).toBe(3);
++    });
++
++    it("does not fail without a shift", async () => {
++        expect(await nextOrderNo(null)).toBe(1);
++    });
++});
+diff --git a/tests/js/ui/devices.test.jsx b/tests/js/ui/devices.test.jsx
+index 8a838ab..9cb6948 100644
+--- a/tests/js/ui/devices.test.jsx
++++ b/tests/js/ui/devices.test.jsx
+@@ -60,7 +60,7 @@ describe("DeviceSyncProvider", () => {
+         await waitFor(() => expect(ctx.deviceName).toBe("Kitchen"));
+         expect(localStorage.getItem("terminal_device_name")).toBe("Kitchen");
+ 
+-        fireEvent.click(screen.getByRole("checkbox"));
++        fireEvent.click(screen.getByLabelText(/A printer is connected/));
+         await waitFor(() => expect(ctx.canPrint).toBe(true));
+         expect(localStorage.getItem("terminal_can_print")).toBe("1");
+         expect(ctx.printers.map((p) => p.name)).toEqual(["Kitchen (this device)"]);
+@@ -77,41 +77,6 @@ describe("DeviceSyncProvider", () => {
+         expect(toastCalls.some((c) => c.kind === "error" && /offline/.test(c.msg))).toBe(true);
+     });
+ 
+-    it("kitchen tickets are off by default and loud when the kitchen printer is offline", async () => {
+-        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
+-        ctx.printKitchenTicket({ tableName: "T4", items: [{ quantity: 1, name: "Chips" }] });
+-        expect(toastCalls.length).toBe(0);
+-
+-        act(() => ctx.setRoute("kitchen", "22222222-2222-4222-8222-222222222222"));
+-        await waitFor(() => expect(ctx.routes.kitchen).toBeTruthy());
+-        ctx.printKitchenTicket({ tableName: "T4", items: [{ quantity: 1, name: "Chips" }] });
+-        expect(toastCalls.some((c) => c.kind === "error" && /NOT printed/.test(c.msg))).toBe(true);
+-    });
+-
+-    it("this device can be its own kitchen printer: renders the ticket and prints it", async () => {
+-        render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
+-        act(() => {
+-            ctx.setCanPrint(true);
+-        });
+-        await waitFor(() => expect(ctx.canPrint).toBe(true));
+-        act(() => ctx.setRoute("kitchen", ctx.deviceId));
+-        await waitFor(() => expect(ctx.routes.kitchen).toBe(ctx.deviceId));
+-
+-        ctx.printKitchenTicket({
+-            tableName: "Window seat",
+-            items: [{ quantity: 2, name: "Castle", metadata: { type: "unit" } }, { quantity: 1, name: "Gin", metadata: { type: "double" } }],
+-            isUpdate: true,
+-        });
+-
+-        await waitFor(() => expect(printed.length).toBe(1), { timeout: 3000 });
+-        expect(printed[0].title).toBe("Kitchen Window seat");
+-        expect(printed[0].html).toContain("Window seat");
+-        expect(printed[0].html).toContain("ADD TO TABLE");
+-        expect(printed[0].html).toContain("2x");
+-        expect(printed[0].html).toContain("Gin (double)");
+-        expect(printed[0].html).not.toMatch(/\$\d/); // no prices on a kitchen ticket
+-    });
+-
+     it("jobs from other devices print through the same host, one at a time", async () => {
+         render(<DeviceSyncProvider><Probe /></DeviceSyncProvider>);
+         act(() => ctx.setCanPrint(true));
+diff --git a/tests/js/ui/kitchen.test.jsx b/tests/js/ui/kitchen.test.jsx
+new file mode 100644
+index 0000000..54c33b6
+--- /dev/null
++++ b/tests/js/ui/kitchen.test.jsx
+@@ -0,0 +1,479 @@
++// Kitchen categories, the kitchen device, automatic receipts and the manager
++// setting, including end to end through the real checkout buttons.
++
++import "fake-indexeddb/auto";
++import React from "react";
++import { render, screen, fireEvent, waitFor, act, cleanup } from "@testing-library/react";
++import { __state } from "@inertiajs/react";
++import { calls as toastCalls } from "react-hot-toast";
++import { printed } from "react-to-print";
++import DeviceSyncProvider, { useDeviceSync } from "@/Components/Devices/DeviceSyncProvider";
++import { KitchenTicket } from "@/Components/Sales/KitchenTicket";
++import CheckoutOrderButton from "@/Components/Sales/CheckoutOrderButton";
++import CheckoutTableButton from "@/Components/Sales/CheckoutTableButton";
++import TicketCart from "@/Components/Sales/Partials/TicketCart";
++import { db, saveTableLocal, saveOrderItemLocal } from "@/Utils/db";
++import { stopEngine } from "@/Sync/engine";
++
++let ctx = null;
++const Probe = () => {
++    ctx = useDeviceSync();
++    return null;
++};
++
++const user = (over = {}) => ({ id: "u1", name: "Tendai", shop_id: "shop-1", role: "cashier", ...over });
++
++let serverSettings;
++let patchCalls;
++const mockServer = ({ patchStatus = 200, patchThrows = false } = {}) => {
++    globalThis.fetch = vi.fn(async (url, init) => {
++        if (url === "/devices/poll") {
++            return { ok: true, status: 200, json: async () => ({ peers: [], messages: [], shop_settings: serverSettings }) };
++        }
++        if (String(url).endsWith("/print-settings")) {
++            if (patchThrows) throw new TypeError("Failed to fetch");
++            patchCalls.push({ url, init });
++            if (patchStatus !== 200) return { ok: false, status: patchStatus, json: async () => ({}) };
++            serverSettings = { ...serverSettings, auto_print_receipts: JSON.parse(init.body).auto_print_receipts };
++            return { ok: true, status: 200, json: async () => serverSettings };
++        }
++        return { ok: true, status: 200, json: async () => ({}) };
++    });
++};
++
++const kitchenItem = (over = {}) => ({
++    cartItemId: crypto.randomUUID(), product_id: "p-chips", name: "Chips", quantity: 2,
++    unit_price: 2, subtotal: 4, metadata: { type: "unit" }, is_kitchen: true, placed: 0, ...over,
++});
++const barItem = (over = {}) => ({
++    cartItemId: crypto.randomUUID(), product_id: "p-castle", name: "Castle Lager", quantity: 1,
++    unit_price: 2.6, subtotal: 2.6, metadata: { type: "unit" }, is_kitchen: false, placed: 0, ...over,
++});
++
++beforeEach(async () => {
++    localStorage.clear();
++    toastCalls.length = 0;
++    printed.length = 0;
++    ctx = null;
++    serverSettings = { auto_print_receipts: false, kitchen_category_ids: [] };
++    patchCalls = [];
++    __state.props = { auth: { user: user() } };
++    globalThis.RTCPeerConnection = class {};
++    mockServer();
++    await Promise.all([db.orders.clear(), db.open_tables.clear(), db.order_items.clear()]);
++});
++afterEach(() => {
++    cleanup();
++    stopEngine();
++    delete globalThis.RTCPeerConnection;
++});
++
++const mount = (extra = null) =>
++    render(
++        <DeviceSyncProvider>
++            <Probe />
++            {extra}
++        </DeviceSyncProvider>,
++    );
++
++const becomeKitchen = async () => {
++    act(() => ctx.setKitchen(true));
++    await waitFor(() => expect(ctx.isKitchen).toBe(true));
++};
++const waitForSettings = (check) => waitFor(() => expect(check(ctx.shopSettings)).toBe(true));
++
++// ---------------------------------------------------------------- the slip
++describe("kitchen ticket", () => {
++    it("shows the table name, who rang it, the time, and only what to cook (no prices)", () => {
++        const { container } = render(
++            <KitchenTicket shopName="Harare Central" tableName="Window seat" staff="Tendai" time="19:42"
++                items={[{ quantity: 2, name: "Chips", metadata: { type: "unit" } }, { quantity: 1, name: "Gin", metadata: { type: "double" } }]} isUpdate />,
++        );
++        const text = container.textContent;
++        expect(text).toContain("TABLE");
++        expect(text).toContain("Window seat");
++        expect(text).toContain("ADD TO TABLE");
++        expect(text).toContain("Tendai");
++        expect(text).toContain("19:42");
++        expect(text).toContain("2x");
++        expect(text).toContain("Gin (double)");
++        expect(text).not.toMatch(/\$\d/);
++    });
++
++    it("shows the order number for a fast sale", () => {
++        const { container } = render(<KitchenTicket shopName="S" orderNo={14} staff="Farai" time="12:01" items={[{ quantity: 1, name: "Burger" }]} />);
++        expect(container.textContent).toContain("ORDER");
++        expect(container.textContent).toContain("#14");
++        expect(container.textContent).toContain("NEW ORDER");
++        expect(container.textContent).toContain("Farai");
++    });
++});
++
++// ------------------------------------------------------- the kitchen device
++describe("kitchen device", () => {
++    it("the toggle is saved and shown, and does not turn the device into a bill printer", async () => {
++        mount();
++        fireEvent.click(screen.getByLabelText("Devices in this shop"));
++        fireEvent.click(screen.getByLabelText("This is the kitchen device"));
++        await waitFor(() => expect(ctx.isKitchen).toBe(true));
++        expect(localStorage.getItem("terminal_is_kitchen")).toBe("1");
++        expect(screen.getByText(/Items from kitchen categories print here automatically/)).toBeTruthy();
++        expect(ctx.canPrint).toBe(false);
++        expect(ctx.printers).toEqual([]); // bills still print where they are rung
++    });
++
++    it("there is no kitchen printer picker any more", () => {
++        mount();
++        fireEvent.click(screen.getByLabelText("Devices in this shop"));
++        expect(screen.queryByText("Send kitchen tickets to")).toBeNull();
++        expect(screen.getByText("Print bills on")).toBeTruthy();
++    });
++
++    it("sends only kitchen-category items, with the table name and staff, and leaves the rest of the bill alone", async () => {
++        mount();
++        await becomeKitchen();
++        const sent = ctx.printKitchenTicket({ tableName: "Window seat", items: [kitchenItem(), barItem()], isUpdate: true });
++        expect(sent).toBe(true);
++        await waitFor(() => expect(printed.length).toBe(1));
++        const html = printed[0].html;
++        expect(printed[0].title).toBe("Kitchen Window seat");
++        expect(html).toContain("Window seat");
++        expect(html).toContain("Tendai");
++        expect(html).toContain("Chips");
++        expect(html).not.toContain("Castle");
++        expect(html).not.toMatch(/\$\d/);
++    });
++
++    it("an order with kitchen items prints the order number", async () => {
++        mount();
++        await becomeKitchen();
++        ctx.printKitchenTicket({ orderNo: 14, items: [kitchenItem()] });
++        await waitFor(() => expect(printed.length).toBe(1));
++        expect(printed[0].html).toContain("#14");
++        expect(printed[0].html).toContain("ORDER");
++    });
++
++    it("prints nothing, and says nothing, when no item in the order is a kitchen item", async () => {
++        mount();
++        await becomeKitchen();
++        expect(ctx.printKitchenTicket({ tableName: "T1", items: [barItem()] })).toBe(false);
++        await new Promise((r) => setTimeout(r, 120));
++        expect(printed.length).toBe(0);
++        expect(toastCalls.length).toBe(0);
++    });
++
++    it("warns loudly, and never falls back to this printer, when no kitchen device is linked", async () => {
++        mount();
++        await waitFor(() => expect(ctx).not.toBeNull());
++        expect(ctx.printKitchenTicket({ tableName: "T1", items: [kitchenItem()] })).toBe(false);
++        expect(toastCalls.some((c) => c.kind === "error" && /No kitchen device is linked. Kitchen ticket NOT printed/.test(c.msg))).toBe(true);
++        await new Promise((r) => setTimeout(r, 120));
++        expect(printed.length).toBe(0);
++    });
++
++    it("names a kitchen that was seen before but is offline", async () => {
++        localStorage.setItem("terminal_known_kitchens", JSON.stringify([{ id: "k1", name: "Hot kitchen" }]));
++        mount();
++        await waitFor(() => expect(ctx).not.toBeNull());
++        ctx.printKitchenTicket({ tableName: "T1", items: [kitchenItem()] });
++        expect(toastCalls.some((c) => c.kind === "error" && /Hot kitchen is offline. Kitchen ticket NOT printed/.test(c.msg))).toBe(true);
++    });
++});
++
++// -------------------------------------------------------- kitchen categories
++describe("kitchen categories", () => {
++    it("uses the live list from the server once known, and the catalog flag only until then", async () => {
++        // hold the first poll back so "before the server has answered" is real
++        let release;
++        const gate = new Promise((r) => (release = r));
++        globalThis.fetch = vi.fn(async (url) => {
++            if (url === "/devices/poll") {
++                await gate;
++                return { ok: true, status: 200, json: async () => ({ peers: [], messages: [], shop_settings: serverSettings }) };
++            }
++            return { ok: true, status: 200, json: async () => ({}) };
++        });
++        mount();
++        await waitFor(() => expect(ctx).not.toBeNull());
++
++        // before the server has answered: the flag that came with the catalog
++        expect(ctx.isKitchenCategory({ id: "c1", is_kitchen: true })).toBe(true);
++        expect(ctx.isKitchenCategory({ id: "c2", is_kitchen: false })).toBe(false);
++        expect(ctx.isKitchenCategory(undefined)).toBe(false);
++
++        serverSettings = { auto_print_receipts: false, kitchen_category_ids: ["c2"] };
++        release();
++        await waitForSettings((s) => s.kitchenCategoryIds?.[0] === "c2");
++
++        // the server list wins, so a category switched on or off mid-shift is right within seconds
++        expect(ctx.isKitchenCategory({ id: "c1", is_kitchen: true })).toBe(false);
++        expect(ctx.isKitchenCategory({ id: "c2", is_kitchen: false })).toBe(true);
++        expect(JSON.parse(localStorage.getItem("terminal_shop_settings")).kitchenCategoryIds).toEqual(["c2"]);
++    });
++
++    it("keeps the last known settings when the server cannot be reached", async () => {
++        localStorage.setItem("terminal_shop_settings", JSON.stringify({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"] }));
++        globalThis.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
++        mount();
++        await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
++        expect(ctx.shopSettings).toEqual({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"] });
++        expect(ctx.isKitchenCategory({ id: "c9" })).toBe(true);
++    });
++});
++
++// ------------------------------------------------------ automatic receipts
++describe("automatic receipt", () => {
++    const receipt = (over = {}) => ({
++        title: "Receipt #3", date: "18/11/2026", staff: "Tendai", customer: null,
++        items: [barItem(), kitchenItem()], totals: { total: 6.6, cash: 10, change: 3.4 }, ...over,
++    });
++
++    it("does nothing while the shop setting is off", async () => {
++        mount();
++        await waitFor(() => expect(ctx).not.toBeNull());
++        expect(ctx.autoPrintReceipt(receipt())).toBe(false);
++        await new Promise((r) => setTimeout(r, 120));
++        expect(printed.length).toBe(0);
++    });
++
++    it("prints the whole bill (kitchen and bar items together) once a manager turns it on", async () => {
++        serverSettings = { auto_print_receipts: true, kitchen_category_ids: [] };
++        mount();
++        await waitForSettings((s) => s.autoPrintReceipts === true);
++        expect(ctx.autoPrintReceipt(receipt())).toBe(true);
++        await waitFor(() => expect(printed.length).toBe(1));
++        const html = printed[0].html;
++        expect(html).toContain("Castle Lager");
++        expect(html).toContain("Chips");
++        expect(html).toContain("CHANGE");
++        expect(html).toContain("$3.40");
++    });
++
++    it("falls back to this device, with a message, if the chosen bill printer is offline", async () => {
++        serverSettings = { auto_print_receipts: true, kitchen_category_ids: [] };
++        mount();
++        await waitForSettings((s) => s.autoPrintReceipts === true);
++        act(() => ctx.setRoute("bill", "11111111-1111-4111-8111-111111111111"));
++        await waitFor(() => expect(ctx.routes.bill).toBeTruthy());
++        ctx.autoPrintReceipt(receipt());
++        expect(toastCalls.some((c) => c.kind === "error" && /offline. Printing the receipt on this device instead/.test(c.msg))).toBe(true);
++        await waitFor(() => expect(printed.length).toBe(1));
++    });
++});
++
++// ------------------------------------------------------ the manager setting
++describe("manager setting: print receipts automatically", () => {
++    const openPanel = () => fireEvent.click(screen.getByLabelText("Devices in this shop"));
++    const settingBox = () => screen.getByLabelText(/Print the customer's receipt automatically/);
++
++    it.each(["manager", "shop_manager"])("is shown to a %s", async (role) => {
++        __state.props = { auth: { user: user({ role }) } };
++        mount();
++        openPanel();
++        expect(settingBox()).toBeTruthy();
++    });
++
++    it.each(["cashier", "bartender"])("is not shown to a %s", async (role) => {
++        __state.props = { auth: { user: user({ role }) } };
++        mount();
++        openPanel();
++        expect(screen.queryByLabelText(/Print the customer's receipt automatically/)).toBeNull();
++    });
++
++    it("saves to the server, then applies on this device", async () => {
++        __state.props = { auth: { user: user({ role: "shop_manager" }) } };
++        mount();
++        openPanel();
++        fireEvent.click(settingBox());
++        await waitFor(() => expect(ctx.shopSettings.autoPrintReceipts).toBe(true));
++        expect(patchCalls.length).toBe(1);
++        expect(patchCalls[0].url).toBe("/shops/shop-1/print-settings");
++        expect(patchCalls[0].init.method).toBe("PATCH");
++        expect(JSON.parse(patchCalls[0].init.body)).toEqual({ auto_print_receipts: true });
++        expect(toastCalls.some((c) => c.kind === "success" && /print automatically/.test(c.msg))).toBe(true);
++    });
++
++    it("does not change anything when the server refuses", async () => {
++        mockServer({ patchStatus: 403 });
++        __state.props = { auth: { user: user({ role: "manager" }) } };
++        mount();
++        openPanel();
++        fireEvent.click(settingBox());
++        await waitFor(() => expect(toastCalls.some((c) => c.kind === "error" && /Only managers can change this setting/.test(c.msg))).toBe(true));
++        expect(ctx.shopSettings.autoPrintReceipts).toBe(false);
++    });
++
++    it("explains that it needs internet when the server cannot be reached", async () => {
++        mockServer({ patchThrows: true });
++        __state.props = { auth: { user: user({ role: "manager" }) } };
++        mount();
++        openPanel();
++        fireEvent.click(settingBox());
++        await waitFor(() => expect(toastCalls.some((c) => c.kind === "error" && /needs an internet connection/.test(c.msg))).toBe(true));
++        expect(ctx.shopSettings.autoPrintReceipts).toBe(false);
++    });
++});
++
++// ----------------------------------------- end to end through the checkout buttons
++describe("Fast Sale", () => {
++    const auth = { user: user() };
++    const sell = async (cart) => {
++        const onClear = vi.fn();
++        const total = cart.reduce((s, i) => s + i.subtotal, 0);
++        mount(<CheckoutOrderButton cart={cart} auth={auth} onClearCart={onClear} cartTotal={total} />);
++        fireEvent.click(screen.getByText(/^Fast Sale/));
++        fireEvent.click(await screen.findByText("Save Sale"));
++        await waitFor(() => expect(onClear).toHaveBeenCalled());
++        return onClear;
++    };
++
++    beforeEach(() => localStorage.setItem("terminal_shift_id", "shift-1"));
++
++    it("sends the kitchen items to the kitchen and the whole bill to the customer, with the order number", async () => {
++        localStorage.setItem("terminal_is_kitchen", "1");
++        serverSettings = { auto_print_receipts: true, kitchen_category_ids: [] };
++        mount();
++        await waitForSettings((s) => s.autoPrintReceipts === true);
++        cleanup();
++
++        await sell([kitchenItem(), barItem()]);
++        await waitFor(() => expect(printed.length).toBe(2));
++
++        const kitchen = printed.find((p) => p.title.startsWith("Kitchen"));
++        const bill = printed.find((p) => p.title.startsWith("Receipt"));
++        expect(kitchen.html).toContain("#1");
++        expect(kitchen.html).toContain("Tendai");
++        expect(kitchen.html).toContain("Chips");
++        expect(kitchen.html).not.toContain("Castle");
++        expect(bill.title).toBe("Receipt #1");
++        expect(bill.html).toContain("Chips");
++        expect(bill.html).toContain("Castle Lager");
++
++        const [order] = await db.orders.toArray();
++        expect(order.order_no).toBe(1);
++        const items = await db.order_items.toArray();
++        expect(items.find((i) => i.name === "Chips").is_kitchen).toBe(true);
++        expect(items.find((i) => i.name === "Castle Lager").is_kitchen).toBe(false);
++    });
++
++    it("prints only the kitchen ticket when automatic receipts are off, as before", async () => {
++        localStorage.setItem("terminal_is_kitchen", "1");
++        await sell([kitchenItem(), barItem()]);
++        await waitFor(() => expect(printed.length).toBe(1));
++        await new Promise((r) => setTimeout(r, 150));
++        expect(printed.length).toBe(1);
++        expect(printed[0].title.startsWith("Kitchen")).toBe(true);
++    });
++
++    it("prints nothing at all for a bar-only sale when automatic receipts are off", async () => {
++        const onClear = await sell([barItem()]);
++        expect(onClear).toHaveBeenCalled();
++        await new Promise((r) => setTimeout(r, 150));
++        expect(printed.length).toBe(0);
++        expect(toastCalls.some((c) => c.kind === "error")).toBe(false);
++    });
++
++    it("still records the sale when there is no kitchen device, and warns", async () => {
++        await sell([kitchenItem()]);
++        expect((await db.orders.toArray()).length).toBe(1);
++        expect(toastCalls.some((c) => c.kind === "error" && /Kitchen ticket NOT printed/.test(c.msg))).toBe(true);
++        expect(printed.length).toBe(0);
++    });
++
++    it("numbers orders one after another within a shift", async () => {
++        await sell([barItem()]);
++        cleanup();
++        await sell([barItem()]);
++        const orders = (await db.orders.toArray()).sort((a, b) => a.order_no - b.order_no);
++        expect(orders.map((o) => o.order_no)).toEqual([1, 2]);
++    });
++});
++
++describe("Open Table", () => {
++    it("sends the kitchen items to the kitchen under the table name and leaves bar items off the ticket", async () => {
++        localStorage.setItem("terminal_shift_id", "shift-1");
++        localStorage.setItem("terminal_is_kitchen", "1");
++        const onClear = vi.fn();
++        mount(<CheckoutTableButton cart={[kitchenItem(), barItem()]} auth={{ user: user() }} onClearCart={onClear} />);
++
++        fireEvent.click(screen.getByText("Open Table"));
++        fireEvent.change(await screen.findByPlaceholderText(/Table 5/), { target: { value: "Window seat" } });
++        fireEvent.click(screen.getByText("Confirm"));
++
++        await waitFor(() => expect(onClear).toHaveBeenCalled());
++        await waitFor(() => expect(printed.length).toBe(1));
++        expect(printed[0].title).toBe("Kitchen Window seat");
++        expect(printed[0].html).toContain("TABLE");
++        expect(printed[0].html).toContain("Window seat");
++        expect(printed[0].html).toContain("NEW ORDER");
++        expect(printed[0].html).toContain("Chips");
++        expect(printed[0].html).not.toContain("Castle");
++
++        const items = await db.order_items.toArray();
++        expect(items.length).toBe(2); // the table keeps every item
++        expect(items.find((i) => i.name === "Chips").is_kitchen).toBe(true);
++    });
++});
++
++describe("Update Table and Close Table", () => {
++    const table = { id: "table-1", shop_id: "shop-1", shift_id: "shift-1", user_id: "u1", name: "Window seat", total_amount: 4, status: "open", created_at: new Date().toISOString() };
++
++    const renderCart = (cart) => {
++        const setCart = vi.fn();
++        const setActiveTable = vi.fn();
++        mount(<TicketCart cart={cart} auth={{ user: user() }} setCart={setCart} activeTable={table} setActiveTable={setActiveTable} onPrint={() => {}} />);
++        return { setCart, setActiveTable };
++    };
++
++    beforeEach(async () => {
++        localStorage.setItem("terminal_shift_id", "shift-1");
++        await saveTableLocal(table);
++        await saveOrderItemLocal({ id: "old-1", orderable_id: table.id, product_id: "p-chips", name: "Chips", quantity: 2, unit_price: 2, subtotal: 4, is_kitchen: true });
++    });
++
++    it("adding to a table sends only the NEW kitchen items to the kitchen", async () => {
++        localStorage.setItem("terminal_is_kitchen", "1");
++        const earlier = kitchenItem({ name: "Chips", placed: 1 });
++        const newKitchen = kitchenItem({ name: "Wings", product_id: "p-wings", quantity: 1, subtotal: 5, unit_price: 5 });
++        const newBar = barItem();
++        renderCart([earlier, newKitchen, newBar]);
++
++        fireEvent.click(screen.getByText("Update Table"));
++        await waitFor(() => expect(printed.length).toBe(1));
++        expect(printed[0].html).toContain("Window seat");
++        expect(printed[0].html).toContain("ADD TO TABLE");
++        expect(printed[0].html).toContain("Wings");
++        expect(printed[0].html).not.toContain("Chips"); // already sent earlier
++        expect(printed[0].html).not.toContain("Castle");
++
++        const stored = await db.order_items.where("orderable_id").equals(table.id).toArray();
++        expect(stored.map((i) => i.name).sort()).toEqual(["Castle Lager", "Chips", "Wings"]);
++    });
++
++    it("closing a table prints the whole bill automatically when the shop setting is on", async () => {
++        serverSettings = { auto_print_receipts: true, kitchen_category_ids: [] };
++        const cart = [kitchenItem({ placed: 1 }), barItem({ placed: 1 })];
++        const { setActiveTable } = renderCart(cart);
++        await waitForSettings((s) => s.autoPrintReceipts === true);
++
++        fireEvent.click(screen.getByText("Close Table"));
++        fireEvent.click(await screen.findByText("Save Sale"));
++
++        await waitFor(() => expect(setActiveTable).toHaveBeenCalledWith(null));
++        await waitFor(() => expect(printed.length).toBe(1));
++        expect(printed[0].title).toBe("Receipt");
++        expect(printed[0].html).toContain("Window seat");
++        expect(printed[0].html).toContain("Chips");
++        expect(printed[0].html).toContain("Castle Lager");
++        expect((await db.open_tables.get(table.id)).status).toBe("closed");
++    });
++
++    it("closing a table prints nothing automatically when the setting is off", async () => {
++        const { setActiveTable } = renderCart([kitchenItem({ placed: 1 })]);
++        fireEvent.click(screen.getByText("Close Table"));
++        fireEvent.click(await screen.findByText("Save Sale"));
++        await waitFor(() => expect(setActiveTable).toHaveBeenCalledWith(null));
++        await new Promise((r) => setTimeout(r, 150));
++        expect(printed.length).toBe(0);
++    });
++});

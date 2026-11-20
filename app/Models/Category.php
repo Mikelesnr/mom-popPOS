@@ -16,7 +16,15 @@ class Category extends Model
         'shop_id',
         'name',
         'slug',
+        'is_kitchen',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'is_kitchen' => 'boolean',
+        ];
+    }
 
     /**
      * Auto-generate slug attribute on creation.

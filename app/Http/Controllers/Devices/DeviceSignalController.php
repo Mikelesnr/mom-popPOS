@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Devices;
 
 use App\Http\Controllers\Controller;
+use App\Services\ShopPrintSettings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -17,6 +18,9 @@ use Illuminate\Validation\Rule;
  *  1. Presence: which devices of this shop are online right now.
  *  2. Mailbox: pass the short connection-setup messages (offer, answer, ice)
  *     from one device to another.
+ *
+ * Each poll also returns the shop's print settings, so a change made by a
+ * manager reaches every device within seconds.
  *
  * It never sees order data. Everything is scoped to the caller's own shop_id
  * and lives in the cache with short expiry, so nothing is stored long term.
@@ -47,6 +51,7 @@ class DeviceSignalController extends Controller
             'device_id' => ['required', 'uuid'],
             'name' => ['nullable', 'string', 'max:40'],
             'can_print' => ['sometimes', 'boolean'],
+            'is_kitchen' => ['sometimes', 'boolean'],
         ]);
 
         $shopId = $user->shop_id;
@@ -56,6 +61,7 @@ class DeviceSignalController extends Controller
             'device_id' => $deviceId,
             'name' => $data['name'] ?? 'Device ' . strtoupper(substr($deviceId, 0, 4)),
             'can_print' => (bool) ($data['can_print'] ?? false),
+            'is_kitchen' => (bool) ($data['is_kitchen'] ?? false),
             'user_name' => $user->name,
         ], self::PRESENCE_TTL);
 
@@ -66,6 +72,10 @@ class DeviceSignalController extends Controller
             'peers' => $this->peers($shopId, $deviceId),
             'messages' => $this->drainMailbox($shopId, $deviceId),
             'ice_servers' => $this->iceServers($user),
+            // What gets printed where for this shop (kitchen categories and
+            // whether receipts print automatically). Devices keep the last
+            // value, so they still work when the server is unreachable.
+            'shop_settings' => ShopPrintSettings::for($shopId),
         ]);
     }
 

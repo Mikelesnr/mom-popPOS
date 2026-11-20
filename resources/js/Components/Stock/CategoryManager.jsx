@@ -26,6 +26,8 @@ export default function CategoryManager({ open, onClose }) {
     const [newName, setNewName] = useState("");
     const [creating, setCreating] = useState(false);
     const [createError, setCreateError] = useState(null);
+    const [newKitchen, setNewKitchen] = useState(false);
+    const [togglingId, setTogglingId] = useState(null);
 
     const [editingId, setEditingId] = useState(null);
     const [editingName, setEditingName] = useState("");
@@ -61,9 +63,11 @@ export default function CategoryManager({ open, onClose }) {
                 id: crypto.randomUUID(),
                 name,
                 slug: slugify(name),
+                is_kitchen: newKitchen,
             });
             await db.categories.put(res.data);
             setNewName("");
+            setNewKitchen(false);
             toast.success(`"${res.data.name}" added.`);
         } catch (err) {
             const message =
@@ -110,6 +114,35 @@ export default function CategoryManager({ open, onClose }) {
             setEditError(message);
         } finally {
             setSavingId(null);
+        }
+    };
+
+    // Switch a category between "kitchen" and "bar / counter". Items in a
+    // kitchen category are sent to the kitchen printer when an order is placed.
+    const toggleKitchen = async (cat) => {
+        setTogglingId(cat.id);
+        setEditError(null);
+        try {
+            const res = await axios.put(
+                route("inventory.categories.update", cat.id),
+                {
+                    name: cat.name,
+                    slug: slugify(cat.name),
+                    is_kitchen: !cat.is_kitchen,
+                },
+            );
+            await db.categories.put(res.data);
+            toast.success(
+                res.data.is_kitchen
+                    ? `"${res.data.name}" now prints in the kitchen.`
+                    : `"${res.data.name}" no longer prints in the kitchen.`,
+            );
+        } catch (err) {
+            toast.error(
+                err?.response?.data?.message || "Could not change this category.",
+            );
+        } finally {
+            setTogglingId(null);
         }
     };
 
@@ -178,6 +211,21 @@ export default function CategoryManager({ open, onClose }) {
                             )}
                         </button>
                     </div>
+                    <label className="flex items-start gap-2 mt-2.5 text-xs text-gray-600 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={newKitchen}
+                            onChange={(e) => setNewKitchen(e.target.checked)}
+                            className="mt-0.5 rounded border-gray-300"
+                        />
+                        <span>
+                            Kitchen category
+                            <span className="block text-gray-400">
+                                Items in it print on the kitchen printer when an
+                                order is placed.
+                            </span>
+                        </span>
+                    </label>
                     {createError && (
                         <p className="text-red-600 text-xs mt-1.5">
                             {createError}
@@ -206,9 +254,29 @@ export default function CategoryManager({ open, onClose }) {
                                         className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"
                                     />
                                 ) : (
-                                    <span className="text-sm text-gray-800 truncate">
-                                        {cat.name}
-                                    </span>
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                        <span className="text-sm text-gray-800 truncate">
+                                            {cat.name}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleKitchen(cat)}
+                                            disabled={togglingId === cat.id}
+                                            aria-pressed={!!cat.is_kitchen}
+                                            title={
+                                                cat.is_kitchen
+                                                    ? "Prints in the kitchen. Tap to turn off."
+                                                    : "Tap to print this category in the kitchen."
+                                            }
+                                            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold border disabled:opacity-50 ${
+                                                cat.is_kitchen
+                                                    ? "bg-orange-100 text-orange-800 border-orange-200"
+                                                    : "bg-white text-gray-400 border-gray-200 hover:text-gray-600"
+                                            }`}
+                                        >
+                                            Kitchen
+                                        </button>
+                                    </div>
                                 )}
 
                                 <div className="flex items-center gap-1 shrink-0">

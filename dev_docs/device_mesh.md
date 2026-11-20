@@ -13,14 +13,57 @@ that PC going down takes every till down with it.
 1. Sign in on each phone or tablet as usual. A small pill appears at the bottom
    left of the screen ("Alone", "2 linked").
 2. Tap it. Give the device a name (Bar, Kitchen, Manager phone).
-3. On the device that has a printer attached, tick "A printer is connected to
-   this device".
-4. On any device, choose where bills print and where kitchen tickets go.
-   Kitchen tickets are off until a kitchen printer is chosen, so nothing
-   changes for shops that do not use this.
+3. On the device that has the bar or counter printer attached, tick "A printer
+   is connected to this device". Bills and receipts print where they are rung,
+   or on the device chosen under "Print bills on".
+4. On the device that has the kitchen printer, tick "This is the kitchen
+   device". That is all the setup the kitchen needs.
+5. In Stock, open the category manager and tick "Kitchen category" on the
+   categories that are cooked or prepared in the kitchen (food, grill, and so
+   on). Existing categories have a "Kitchen" button that switches them on or off.
 
 A manager on another phone now sees the same open tables live, and can add
 items, defer or close a table without logging in on the device that opened it.
+
+## Kitchen tickets and receipts
+
+Every bill and receipt prints exactly as before, with all of the items on it,
+bar and kitchen items together. Kitchen tickets are an addition:
+
+- When an order is placed (Fast Sale), a table is opened, or items are added to
+  a table, the items that belong to **kitchen categories** are also sent to every
+  linked device marked "This is the kitchen device". Items from other
+  categories are never on the kitchen ticket.
+- The ticket shows who rang it up, the **table name** (or the **order number**
+  for a fast sale), the time, and the quantities. No prices.
+- Order numbers run 1, 2, 3 within a shift and carry on from orders that arrived
+  from other devices. Two devices that cannot see each other can pick the same
+  number, which is why the staff name and time are on the ticket too.
+- A kitchen device that rings its own sales prints its own ticket.
+- If a kitchen item is ordered and no kitchen device is linked, the sale is still
+  saved and a message says "Kitchen ticket NOT printed" (naming the kitchen if
+  it was seen before). There is deliberately no fallback to another printer,
+  because a ticket that prints at the bar never reaches the kitchen.
+- Which categories are kitchen categories reaches every device within a few
+  seconds, with the regular device poll, so switching one mid-shift does not
+  need anyone to press Sync. The flag that comes with the catalog is only used
+  until the server has been heard once.
+
+### Automatic receipts (managers)
+
+By default nothing changes: receipts print when someone taps Print. A manager,
+shop manager or the shop's owner can turn on "Print the customer's receipt
+automatically when an order or table is paid" in the Shop devices panel. It
+applies to every device in the shop. Businesses that hand every customer a slip
+(fast food) can turn it on so nobody forgets; restaurants that only print a bill
+on request can leave it off to save paper.
+
+- The receipt goes to the chosen bill printer, or prints on the device that took
+  the payment. If the chosen printer is offline it prints on that device.
+- Saving the setting needs internet, because it lives on the server. Devices
+  then pick it up with their next poll, and keep the last value they saw if the
+  server cannot be reached.
+- The server enforces who may change it (gate `manage-shop-print-settings`).
 
 ## How it fits together
 
@@ -64,8 +107,9 @@ shift plus anything not yet uploaded.
 ### Printing
 
 A browser cannot see or drive another machine's printer, so the job travels as
-plain data to a device marked as a print station. That device renders it and
-opens its own browser print dialog.
+plain data to a device marked as a print station or as the kitchen device. That
+device renders it and opens its own browser print dialog. The same print host
+also prints jobs for this device itself, such as an automatic receipt.
 
 To print without the dialog on a Windows or Linux PC attached to a receipt
 printer, start Chrome with `--kiosk-printing` and set that printer as the
@@ -73,7 +117,11 @@ default. Phones and tablets will always show the dialog.
 
 If the chosen bill printer is offline, the bill prints on the current device
 instead. A kitchen ticket never falls back, because a ticket that prints at the
-bar never reaches the kitchen. It shows a loud error instead.
+bar never reaches the kitchen. It shows a loud error instead. Printing never
+blocks a sale: the order or table is always saved first.
+
+The kitchen device accepts kitchen jobs without also being a bill printer, so
+ticking "This is the kitchen device" does not make bills print there.
 
 ## If devices do not link
 
@@ -163,6 +211,24 @@ signaling layer is written so it can be swapped in.
 - Deletes are not replicated. Replicated tables are append and update only.
 - Peers are trusted as staff of the shop. Server side upload validation remains
   the authority on what is accepted into the ledger.
+
+## What was added on the server
+
+- `categories.is_kitchen` (default off) and `shops.auto_print_receipts` (default
+  off), in one migration. Both default to the behaviour you had before.
+- `CategoryController` accepts `is_kitchen` on create and update, and
+  `CategoryMenuResource` sends it with the catalog.
+- `PATCH /shops/{shop}/print-settings` (gate `manage-shop-print-settings`:
+  owner of the shop, its managers and shop managers).
+- `ShopPrintSettings` returns the shop's settings with every device poll and is
+  cached for a minute. It is cleared whenever a category or the setting changes,
+  so the next poll has the new values.
+- `CategoryPolicy`. `CategoryController` already called `authorize('update')` and
+  `authorize('delete')`, but no policy existed, so as far as the code goes those
+  were refused for everyone. The new policy lets the shop's owner, managers and
+  shop managers rename, delete and change categories, which also lets them mark
+  a category as a kitchen category.
+- Run the migration (`php artisan migrate`) before using any of this.
 
 ## Tests
 

@@ -5,6 +5,7 @@ import { updateTableItemsLocal, closeTableLocal } from "@/Utils/db";
 import PaymentSelectionModal from "@/Components/Sales/PaymentSelectionModal";
 import toast from "react-hot-toast";
 import { useDeviceSync } from "@/Components/Devices/DeviceSyncProvider";
+import { paymentTotals } from "@/Utils/receipt";
 
 export default function TicketCart({
     cart,
@@ -15,7 +16,7 @@ export default function TicketCart({
     onPrint,
 }) {
     const [activePaymentContext, setActivePaymentContext] = useState(null);
-    const { printKitchenTicket } = useDeviceSync();
+    const { printKitchenTicket, autoPrintReceipt } = useDeviceSync();
 
     const cartTotal = cart.reduce(
         (sum, item) => sum + (parseFloat(item.subtotal) || 0),
@@ -58,12 +59,17 @@ export default function TicketCart({
 
         try {
             await updateTableItemsLocal(activeTable.id, newItems);
-            // Only the new items, and only if a kitchen printer is chosen.
-            printKitchenTicket({
-                tableName: activeTable.name,
-                items: newItems,
-                isUpdate: true,
-            });
+            // Only the new items that belong to a kitchen category, sent to the
+            // kitchen device. Never blocks updating the table.
+            try {
+                printKitchenTicket({
+                    tableName: activeTable.name,
+                    items: newItems,
+                    isUpdate: true,
+                });
+            } catch (printError) {
+                console.error("Kitchen ticket failed:", printError);
+            }
             toast.success("Table updated successfully!");
             clearCart();
         } catch (e) {
@@ -75,6 +81,22 @@ export default function TicketCart({
         if (!activeTable) return;
         try {
             await closeTableLocal(activeTable.id, paymentData, cartTotal);
+
+            // The customer's receipt for the whole table, only if a manager
+            // turned auto-print on. Never blocks closing the table.
+            try {
+                autoPrintReceipt({
+                    title: "Receipt",
+                    date: new Date().toLocaleDateString(),
+                    staff: auth.user.name,
+                    customer: activeTable.name,
+                    items: cart,
+                    totals: paymentTotals(cartTotal, paymentData),
+                });
+            } catch (printError) {
+                console.error("Receipt printing failed:", printError);
+            }
+
             toast.success("Table closed and paid successfully!");
             clearCart();
         } catch (e) {

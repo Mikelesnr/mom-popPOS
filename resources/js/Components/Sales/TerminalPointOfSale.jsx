@@ -59,7 +59,7 @@ export default function TerminalPointOfSale() {
 
     // If a bill printer on another device is selected (Shop devices panel),
     // send the bill there. Returns false to fall through to local printing.
-    const { printBill } = useDeviceSync();
+    const { printBill, isKitchenCategory } = useDeviceSync();
     const printBillRemote = () =>
         printBill({
             title: activeTable ? "Table Bill" : "Receipt",
@@ -117,6 +117,7 @@ export default function TerminalPointOfSale() {
             unit_price: item.unit_price,
             subtotal: item.subtotal,
             metadata: item.metadata,
+            is_kitchen: !!item.is_kitchen,
             placed: item.placed,
         }));
         setCart(cartItems);
@@ -165,6 +166,13 @@ export default function TerminalPointOfSale() {
     }, [shopId, activeCategory]);
 
     const addToCart = (product, metadata, quantity = 1) => {
+        // Items from a kitchen category are also sent to the kitchen printer
+        // when the order is placed. Everything stays on the normal bill.
+        const owner = categories.find((c) =>
+            c.products?.some((p) => p.id === product.id),
+        );
+        const isKitchenItem = isKitchenCategory(owner);
+
         setCart((currentCart) => {
             const uniqueId = Date.now();
             const cartItemId = `${product.id}-${metadata.type}-${uniqueId}`;
@@ -185,6 +193,7 @@ export default function TerminalPointOfSale() {
                     unit_price: parseFloat(price),
                     subtotal: parseFloat(price) * quantity,
                     metadata,
+                    is_kitchen: isKitchenItem,
                     placed: 0,
                     orderable_id: null,
                     orderable_type: null,

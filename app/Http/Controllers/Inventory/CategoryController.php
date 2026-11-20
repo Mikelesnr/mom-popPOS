@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Unit;
 use App\Models\PaymentMethod;
+use App\Services\ShopPrintSettings;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Str;
@@ -75,6 +76,7 @@ class CategoryController extends Controller
                 ),
             ],
             'slug' => ['nullable', 'string', 'max:255'],
+            'is_kitchen' => ['sometimes', 'boolean'],
         ], [
             'name.unique' => 'A category with this name already exists.',
         ]);
@@ -88,8 +90,11 @@ class CategoryController extends Controller
                 'shop_id' => $shopId,
                 'name' => $validated['name'],
                 'slug' => Str::slug($validated['name']),
+                'is_kitchen' => (bool) ($validated['is_kitchen'] ?? false),
             ],
         );
+
+        ShopPrintSettings::forget($shopId);
 
         return $category;
     }
@@ -115,6 +120,7 @@ class CategoryController extends Controller
                     ->ignore($category->id),
             ],
             'slug' => ['nullable', 'string', 'max:255'],
+            'is_kitchen' => ['sometimes', 'boolean'],
         ], [
             'name.unique' => 'A category with this name already exists.',
         ]);
@@ -122,7 +128,12 @@ class CategoryController extends Controller
         $category->update([
             'name' => $validated['name'],
             'slug' => Str::slug($validated['name']),
+            'is_kitchen' => array_key_exists('is_kitchen', $validated)
+                ? (bool) $validated['is_kitchen']
+                : $category->is_kitchen,
         ]);
+
+        ShopPrintSettings::forget($category->shop_id);
 
         return $category;
     }
@@ -141,7 +152,9 @@ class CategoryController extends Controller
             ], 409);
         }
 
+        $shopId = $category->shop_id;
         $category->delete();
+        ShopPrintSettings::forget($shopId);
 
         return response()->noContent();
     }
