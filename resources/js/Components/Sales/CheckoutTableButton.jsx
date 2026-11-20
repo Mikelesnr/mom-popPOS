@@ -44,11 +44,16 @@ export default function CheckoutTableButton({ cart, auth, onClearCart }) {
                     unit_price: item.unit_price,
                     subtotal: item.subtotal,
                     metadata: item.metadata || { type: "unit" },
+                    is_kitchen: !!item.is_kitchen,
                 });
             }
 
-            // Only prints if a kitchen printer is chosen in the Shop devices panel.
-            printKitchenTicket({ tableName, items: cart, isUpdate: false });
+            // Kitchen items only, to the kitchen device. Never blocks opening the table.
+            try {
+                printKitchenTicket({ tableName, items: cart, isUpdate: false });
+            } catch (printError) {
+                console.error("Kitchen ticket failed:", printError);
+            }
 
             onClearCart();
             setTableName(""); // Reset input

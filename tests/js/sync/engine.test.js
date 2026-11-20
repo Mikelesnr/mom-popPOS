@@ -20,14 +20,21 @@ async function waitFor(fn, ms = 10_000, label = "condition") {
 function signalServer() {
     const mail = new Map();
     const devices = new Map();
-    return (deviceId) => ({
+    const factory = (deviceId) => ({
         async poll(self) {
-            devices.set(deviceId, { device_id: deviceId, name: self.name, can_print: self.can_print });
+            devices.set(deviceId, {
+                device_id: deviceId,
+                name: self.name,
+                can_print: self.can_print,
+                is_kitchen: self.is_kitchen,
+            });
             if (!mail.has(deviceId)) mail.set(deviceId, []);
-            return {
+            const res = {
                 peers: [...devices.values()].filter((d) => d.device_id !== deviceId),
                 messages: mail.get(deviceId).splice(0),
             };
+            if (factory.settings) res.shop_settings = factory.settings;
+            return res;
         },
         async send(m) {
             mail.get(m.to)?.push({ from: deviceId, type: m.type, sid: m.sid, payload: m.payload });
@@ -36,6 +43,9 @@ function signalServer() {
             devices.delete(deviceId);
         },
     });
+    factory.settings = null; // what the server returns as shop_settings
+    factory.forget = (deviceId) => devices.delete(deviceId);
+    return factory;
 }
 
 const memoryStorage = (init = {}) => {
@@ -171,4 +181,93 @@ describe("engine", () => {
         expect(d.log.some((e) => e.kind === "link up")).toBe(true);
         void b;
     }, 30_000);
+
+    it("the kitchen flag reaches the other device over the real link, and is remembered after the kitchen goes away", async () => {
+        const server = signalServer();
+        const bar = mk("aaaa1111-0000-4000-8000-000000000001", server);
+        const kitchen = mk("bbbb2222-0000-4000-8000-000000000002", server);
+        await waitFor(() => bar.engine.getSnapshot().peers.length === 1, 12_000, "linked");
+        expect(bar.engine.getSnapshot().peers[0].isKitchen).toBe(false);
+
+        kitchen.engine.setName("Kitchen");
+        kitchen.engine.setKitchen(true);
+        await waitFor(() => bar.engine.getSnapshot().peers[0]?.isKitchen === true, 6000, "bar sees the kitchen");
+        expect(bar.engine.getSnapshot().knownKitchens).toEqual([
+            { id: "bbbb2222-0000-4000-8000-000000000002", name: "Kitchen" },
+        ]);
+
+        // the kitchen device is switched off: it is gone from the peers but remembered
+        kitchen.engine.stop();
+        server.forget("bbbb2222-0000-4000-8000-000000000002");
+        await waitFor(() => bar.engine.getSnapshot().peers.length === 0, 8000, "kitchen gone");
+        expect(bar.engine.getSnapshot().knownKitchens.map((k) => k.name)).toEqual(["Kitchen"]);
+
+        // and it shows up in the diagnostics too
+        expect(bar.engine.getDiagnostics().knownKitchens.length).toBe(1);
+    }, 40_000);
+
+    it("a device that stops being the kitchen is forgotten", async () => {
+        const server = signalServer();
+        const bar = mk("aaaa1111-0000-4000-8000-000000000001", server);
+        const kitchen = mk("bbbb2222-0000-4000-8000-000000000002", server);
+        await waitFor(() => bar.engine.getSnapshot().peers.length === 1, 12_000, "linked");
+        kitchen.engine.setKitchen(true);
+        await waitFor(() => bar.engine.getSnapshot().knownKitchens.length === 1, 6000, "known");
+        kitchen.engine.setKitchen(false);
+        await waitFor(() => bar.engine.getSnapshot().knownKitchens.length === 0, 6000, "forgotten");
+    }, 30_000);
+
+    it("a kitchen device takes print jobs even though it was never marked as a bill printer", async () => {
+        const server = signalServer();
+        const bar = mk("aaaa1111-0000-4000-8000-000000000001", server);
+        const kitchen = mk("bbbb2222-0000-4000-8000-000000000002", server);
+        const printed = [];
+        kitchen.engine.setPrintHost({ enqueue: async (job) => printed.push(job) });
+        kitchen.engine.setKitchen(true); // canPrint stays false
+        await waitFor(() => bar.engine.getSnapshot().peers[0]?.isKitchen === true, 12_000, "kitchen seen");
+        expect(bar.engine.getSnapshot().peers[0].canPrint).toBe(false);
+
+        await bar.engine.sendPrint(kitchen.id, { template: "kitchen", props: { tableName: "T4" } });
+        expect(printed.length).toBe(1);
+    }, 30_000);
+
+    it("a device that is neither a printer nor the kitchen still refuses print jobs", async () => {
+        const server = signalServer();
+        const bar = mk("aaaa1111-0000-4000-8000-000000000001", server);
+        const other = mk("bbbb2222-0000-4000-8000-000000000002", server);
+        await waitFor(() => bar.engine.getSnapshot().peers.length === 1, 12_000, "linked");
+        await expect(bar.engine.sendPrint(other.id, { template: "kitchen", props: {} })).rejects.toThrow(/not set up as a printer/);
+    }, 30_000);
+
+    it("applies the print settings the server returns with each poll, and keeps them", async () => {
+        const server = signalServer();
+        server.settings = { auto_print_receipts: true, kitchen_category_ids: [7, "c2"] };
+        const a = mk("aaaa1111-0000-4000-8000-000000000001", server);
+        await waitFor(() => a.engine.getSnapshot().shopSettings.autoPrintReceipts === true, 6000, "settings applied");
+        expect(a.engine.getSnapshot().shopSettings.kitchenCategoryIds).toEqual(["7", "c2"]); // ids compared as text
+        expect(a.engine.getDiagnostics().shopSettings.autoPrintReceipts).toBe(true);
+
+        // a manager turns it off; the next poll brings that to the device
+        server.settings = { auto_print_receipts: false, kitchen_category_ids: ["c2"] };
+        await waitFor(() => a.engine.getSnapshot().shopSettings.autoPrintReceipts === false, 8000, "change applied");
+        expect(a.engine.getSnapshot().shopSettings.kitchenCategoryIds).toEqual(["c2"]);
+    }, 30_000);
+
+    it("starts from the last settings it saw, before the server has answered", async () => {
+        const server = signalServer();
+        const stored = { terminal_shop_settings: JSON.stringify({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"] }), terminal_known_kitchens: JSON.stringify([{ id: "k", name: "Pass" }]) };
+        const a = mk("aaaa1111-0000-4000-8000-000000000001", server, stored);
+        const snap = a.engine.getSnapshot();
+        expect(snap.shopSettings).toEqual({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"] });
+        expect(snap.knownKitchens).toEqual([{ id: "k", name: "Pass" }]);
+    });
+
+    it("kitchen tickets no longer need a chosen printer, and the old setting is ignored", async () => {
+        const server = signalServer();
+        const a = mk("aaaa1111-0000-4000-8000-000000000001", server, { terminal_route_kitchen: "some-old-device" });
+        a.engine.setRoute("kitchen", "x"); // no longer a route
+        expect(a.engine.getSnapshot().routes).toEqual({ bill: "" });
+        a.engine.setRoute("bill", "dev-1");
+        expect(a.engine.getSnapshot().routes.bill).toBe("dev-1");
+    });
 });

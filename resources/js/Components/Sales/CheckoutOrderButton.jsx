@@ -1,5 +1,7 @@
 import React, { useState } from "react";
-import { saveOrderLocal, saveOrderItemLocal } from "@/Utils/db";
+import { saveOrderLocal, saveOrderItemLocal, nextOrderNo } from "@/Utils/db";
+import { paymentTotals } from "@/Utils/receipt";
+import { useDeviceSync } from "@/Components/Devices/DeviceSyncProvider";
 import toast from "react-hot-toast";
 import PaymentSelectionModal from "@/Components/Sales/PaymentSelectionModal";
 
@@ -11,6 +13,7 @@ export default function CheckoutOrderButton({
     cartTotal,
 }) {
     const [showPayment, setShowPayment] = useState(false);
+    const { printKitchenTicket, autoPrintReceipt } = useDeviceSync();
 
     // finalizeCheckout now receives the paymentData object from modal
     const finalizeCheckout = async (paymentData) => {
@@ -19,9 +22,13 @@ export default function CheckoutOrderButton({
         const now = new Date().toISOString();
 
         try {
+            // Shown on the kitchen ticket so the order can be called out.
+            const orderNo = await nextOrderNo(shiftId);
+
             // Save order with payment details
             await saveOrderLocal({
                 id: orderId,
+                order_no: orderNo,
                 shop_id: auth.user.shop_id,
                 shift_id: shiftId,
                 user_id: auth.user.id,
@@ -44,7 +51,25 @@ export default function CheckoutOrderButton({
                     unit_price: item.unit_price,
                     subtotal: item.subtotal,
                     metadata: item.metadata || { type: "unit" },
+                    is_kitchen: !!item.is_kitchen,
                 });
+            }
+
+            // Printing must never get in the way of recording the sale.
+            try {
+                // Kitchen items only, to the kitchen device (if any are in the order).
+                printKitchenTicket({ orderNo, items: cart, isUpdate: false });
+                // The customer's receipt, only if a manager turned auto-print on.
+                autoPrintReceipt({
+                    title: `Receipt #${orderNo}`,
+                    date: new Date().toLocaleDateString(),
+                    staff: auth.user.name,
+                    customer: null,
+                    items: cart,
+                    totals: paymentTotals(cartTotal, paymentData),
+                });
+            } catch (printError) {
+                console.error("Printing after sale failed:", printError);
             }
 
             onClearCart();

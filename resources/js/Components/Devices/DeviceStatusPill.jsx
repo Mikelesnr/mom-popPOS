@@ -12,6 +12,7 @@ export default function DeviceStatusPill() {
     const [nameDraft, setNameDraft] = useState(null);
     const [diagText, setDiagText] = useState("");
     const [copied, setCopied] = useState(false);
+    const [savingSetting, setSavingSetting] = useState(false);
 
     if (!sync.enabled) return null;
 
@@ -140,6 +141,22 @@ export default function DeviceStatusPill() {
                         />
                         A printer is connected to this device
                     </label>
+                    <label className="flex min-h-[44px] items-center gap-3 text-sm text-stone-700">
+                        <input
+                            type="checkbox"
+                            checked={sync.isKitchen}
+                            onChange={(e) => sync.setKitchen(e.target.checked)}
+                            className="h-5 w-5 rounded border-stone-300 text-[#14352E] focus:ring-[#14352E]"
+                        />
+                        This is the kitchen device
+                    </label>
+                    {sync.isKitchen && (
+                        <p className="mb-1 text-xs text-stone-500">
+                            Items from kitchen categories print here automatically, whichever
+                            device takes the order. Bills and receipts still print where
+                            they are rung.
+                        </p>
+                    )}
 
                     {/* Other devices */}
                     <div className="mt-4 border-t border-stone-100 pt-3">
@@ -153,6 +170,11 @@ export default function DeviceStatusPill() {
                                         <div className="flex items-center justify-between gap-2">
                                             <span className="font-medium text-stone-800">{p.name}</span>
                                             <span className="flex items-center gap-1.5">
+                                                {p.isKitchen && (
+                                                    <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-semibold text-orange-800">
+                                                        Kitchen
+                                                    </span>
+                                                )}
                                                 {p.canPrint && (
                                                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
                                                         Printer
@@ -196,21 +218,43 @@ export default function DeviceStatusPill() {
                             printers={printerOptions}
                             emptyLabel="This device (browser print)"
                         />
-                        <RouteSelect
-                            label="Send kitchen tickets to"
-                            value={sync.routes.kitchen}
-                            onChange={(v) => sync.setRoute("kitchen", v)}
-                            printers={printerOptions}
-                            emptyLabel="Off"
-                        />
-                        {[sync.routes.bill, sync.routes.kitchen].some(
-                            (id) => id && !printerOptions.some((p) => p.id === id),
-                        ) && (
-                            <p className="text-xs text-amber-700">
-                                A chosen printer is offline right now.
-                            </p>
-                        )}
+                        {sync.routes.bill &&
+                            !printerOptions.some((p) => p.id === sync.routes.bill) && (
+                                <p className="text-xs text-amber-700">
+                                    The chosen bill printer is offline right now.
+                                </p>
+                            )}
                     </div>
+
+                    {/* Shop-wide settings, managers only */}
+                    {sync.canManageShop && (
+                        <div className="mt-4 border-t border-stone-100 pt-3">
+                            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-stone-500">
+                                Shop settings
+                            </p>
+                            <label className="flex min-h-[44px] items-start gap-3 text-sm text-stone-700">
+                                <input
+                                    type="checkbox"
+                                    checked={sync.shopSettings.autoPrintReceipts}
+                                    disabled={savingSetting}
+                                    onChange={async (e) => {
+                                        setSavingSetting(true);
+                                        await sync.setAutoPrintReceipts(e.target.checked);
+                                        setSavingSetting(false);
+                                    }}
+                                    className="mt-0.5 h-5 w-5 shrink-0 rounded border-stone-300 text-[#14352E] focus:ring-[#14352E]"
+                                />
+                                <span>
+                                    Print the customer's receipt automatically when an order
+                                    or table is paid
+                                    <span className="block text-xs text-stone-500">
+                                        Applies to every device in the shop. Turn it off to
+                                        save paper and print only when asked.
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+                    )}
 
                     <div className="mt-4 grid grid-cols-2 gap-2">
                         <button

@@ -17,8 +17,10 @@ const KEYS = {
     deviceId: "terminal_device_id",
     name: "terminal_device_name",
     canPrint: "terminal_can_print",
+    isKitchen: "terminal_is_kitchen",
+    knownKitchens: "terminal_known_kitchens",
+    shopSettings: "terminal_shop_settings",
     routeBill: "terminal_route_bill",
-    routeKitchen: "terminal_route_kitchen",
     hlc: "mesh_hlc",
 };
 
@@ -62,10 +64,39 @@ export function createEngine({
         shopId,
         name: storage.get(KEYS.name) || `Device ${deviceId.slice(0, 4).toUpperCase()}`,
         canPrint: storage.get(KEYS.canPrint) === "1",
+        // This device has the kitchen printer. Items in kitchen categories are
+        // sent here automatically from every device in the shop.
+        isKitchen: storage.get(KEYS.isKitchen) === "1",
     };
+    // Where bills print. Kitchen tickets need no setting: they go to every
+    // device that says it is the kitchen.
     const routes = {
         bill: storage.get(KEYS.routeBill) || "",
-        kitchen: storage.get(KEYS.routeKitchen) || "",
+    };
+
+    const readJson = (key, fallback) => {
+        try {
+            const v = JSON.parse(storage.get(key));
+            return v ?? fallback;
+        } catch {
+            return fallback;
+        }
+    };
+
+    // Kitchen devices seen before, so an offline kitchen can be named in the
+    // warning instead of just "no kitchen".
+    let knownKitchens = readJson(KEYS.knownKitchens, []);
+    if (!Array.isArray(knownKitchens)) knownKitchens = [];
+
+    // Settings the server sends with every poll. The last value is kept so
+    // devices behave the same when the server cannot be reached.
+    // kitchenCategoryIds is null until the server has been heard at least once.
+    const savedSettings = readJson(KEYS.shopSettings, {});
+    let shopSettings = {
+        autoPrintReceipts: !!savedSettings.autoPrintReceipts,
+        kitchenCategoryIds: Array.isArray(savedSettings.kitchenCategoryIds)
+            ? savedSettings.kitchenCategoryIds
+            : null,
     };
 
     const state = {
@@ -88,6 +119,9 @@ export function createEngine({
             shopId,
             name: self.name,
             canPrint: self.canPrint,
+            isKitchen: self.isKitchen,
+            knownKitchens,
+            shopSettings,
             routes: { ...routes },
             peers: state.peers,
             status: state.status,
@@ -125,7 +159,8 @@ export function createEngine({
     const printService = createPrintService({
         bus,
         deviceId,
-        getSelf: () => self,
+        // A kitchen device accepts jobs even if it was never marked as a bill printer.
+        getSelf: () => ({ canPrint: self.canPrint || self.isKitchen }),
         onJob: (job) =>
             printHost
                 ? printHost.enqueue(job)
@@ -146,6 +181,7 @@ export function createEngine({
         },
         // Keep the engine (and its explanation) on screen, but mark it unusable
         // so the next page load builds a fresh one after signing in again.
+        onShopSettings: (raw) => applyShopSettings(raw),
         onAuthLost: () => {
             denied = true;
             touch();
@@ -158,9 +194,45 @@ export function createEngine({
             id: p.id,
             name: p.name,
             canPrint: !!p.canPrint,
+            isKitchen: !!p.isKitchen,
         }));
+        rememberKitchens(state.peers);
         touch();
     });
+
+    function rememberKitchens(peers) {
+        let next = knownKitchens.slice();
+        for (const p of peers) {
+            const at = next.findIndex((k) => k.id === p.id);
+            if (p.isKitchen) {
+                if (at === -1) next.push({ id: p.id, name: p.name });
+                else if (next[at].name !== p.name) next[at] = { id: p.id, name: p.name };
+            } else if (at !== -1) {
+                next.splice(at, 1); // it stopped being the kitchen
+            }
+        }
+        if (JSON.stringify(next) !== JSON.stringify(knownKitchens)) {
+            knownKitchens = next;
+            storage.set(KEYS.knownKitchens, JSON.stringify(knownKitchens));
+        }
+    }
+
+    function applyShopSettings(raw) {
+        if (!raw || typeof raw !== "object") return;
+        const next = {
+            autoPrintReceipts:
+                raw.auto_print_receipts === undefined
+                    ? shopSettings.autoPrintReceipts
+                    : !!raw.auto_print_receipts,
+            kitchenCategoryIds: Array.isArray(raw.kitchen_category_ids)
+                ? raw.kitchen_category_ids.map(String)
+                : shopSettings.kitchenCategoryIds,
+        };
+        if (JSON.stringify(next) === JSON.stringify(shopSettings)) return;
+        shopSettings = next;
+        storage.set(KEYS.shopSettings, JSON.stringify(shopSettings));
+        touch();
+    }
 
     const nameOf = (id) =>
         id === deviceId ? self.name : state.peers.find((p) => p.id === id)?.name || "that device";
@@ -212,13 +284,24 @@ export function createEngine({
             touch();
         },
 
-        /** kind: "bill" | "kitchen". id: a device id, or "" (this device / off). */
-        setRoute(kind, id) {
-            if (kind !== "bill" && kind !== "kitchen") return;
-            routes[kind] = id || "";
-            storage.set(kind === "bill" ? KEYS.routeBill : KEYS.routeKitchen, routes[kind]);
+        /** This device has the kitchen printer. Kitchen items from every device print here. */
+        setKitchen(flag) {
+            self.isKitchen = !!flag;
+            storage.set(KEYS.isKitchen, self.isKitchen ? "1" : "0");
+            mesh.announce();
             touch();
         },
+
+        /** kind: "bill". id: a device id, or "" for this device. */
+        setRoute(kind, id) {
+            if (kind !== "bill") return;
+            routes.bill = id || "";
+            storage.set(KEYS.routeBill, routes.bill);
+            touch();
+        },
+
+        /** Apply settings in the server's shape, e.g. after a manager changes one. */
+        applyShopSettings,
 
         /** The component that actually renders and prints on this device. */
         setPrintHost(host) {
@@ -233,7 +316,15 @@ export function createEngine({
             const mesh_ = mesh.getDiagnostics();
             return {
                 when: new Date().toISOString(),
-                device: { id: deviceId, name: self.name, canPrint: self.canPrint, shopId },
+                device: {
+                    id: deviceId,
+                    name: self.name,
+                    canPrint: self.canPrint,
+                    isKitchen: self.isKitchen,
+                    shopId,
+                },
+                shopSettings,
+                knownKitchens,
                 browser: {
                     userAgent: g.navigator?.userAgent,
                     secureContext: g.isSecureContext,

@@ -76,7 +76,7 @@ async function describePath(pc) {
 export function createRTCMesh({
     bus,
     deviceId,
-    getSelfInfo, // () => ({ name, canPrint, shopId })
+    getSelfInfo, // () => ({ name, canPrint, isKitchen, shopId })
     signaling, // { poll(self) -> { peers, messages, ice_servers? }, send(msg), leave?() }
     RTCPeerConnectionImpl = globalThis.RTCPeerConnection,
     iceServers = [], // extra servers; the server can add more (STUN/TURN) in poll()
@@ -87,6 +87,7 @@ export function createRTCMesh({
     connectTimeoutMs = 20_000, // a link still "connecting" after this is retried
     onStatus = () => {},
     onAuthLost = () => {}, // the server says this session is no longer allowed
+    onShopSettings = () => {}, // print settings the server returns with every poll
     now = () => Date.now(),
 }) {
     const conns = new Map(); // peerId -> conn
@@ -139,6 +140,7 @@ export function createRTCMesh({
             id: p.device_id,
             name: p.name,
             canPrint: !!p.can_print,
+            isKitchen: !!p.is_kitchen,
         })),
         connections: [...conns.entries()].map(([id, c]) => ({
             id,
@@ -273,6 +275,7 @@ export function createRTCMesh({
             shopId: self.shopId,
             name: self.name,
             canPrint: !!self.canPrint,
+            isKitchen: !!self.isKitchen,
         });
     }
 
@@ -315,6 +318,7 @@ export function createRTCMesh({
                 deviceId: conn.peerId,
                 name: msg.name || conn.peerId.slice(0, 6),
                 canPrint: !!msg.canPrint,
+                isKitchen: !!msg.isKitchen,
             });
             conn.link = link;
             bus.attach(conn.peerId, link);
@@ -333,7 +337,11 @@ export function createRTCMesh({
         if (msg.t === "ping") return sendRaw(conn, { t: "pong" });
         if (msg.t === "pong") return;
         if (msg.t === "info") {
-            bus.updateInfo(conn.peerId, { name: msg.name, canPrint: !!msg.canPrint });
+            bus.updateInfo(conn.peerId, {
+                name: msg.name,
+                canPrint: !!msg.canPrint,
+                isKitchen: !!msg.isKitchen,
+            });
             return;
         }
         bus.receive(conn.peerId, msg);
@@ -505,6 +513,7 @@ export function createRTCMesh({
                 device_id: deviceId,
                 name: self.name,
                 can_print: !!self.canPrint,
+                is_kitchen: !!self.isKitchen,
             });
             if (signalingUp !== true) {
                 note("server reachable", {}, "info");
@@ -523,6 +532,14 @@ export function createRTCMesh({
                     serverIce = res.ice_servers;
                     note("ice servers", { urls: res.ice_servers.map((s) => s.urls) }, "info");
                     emitStatus();
+                }
+            }
+
+            if (res.shop_settings && typeof res.shop_settings === "object") {
+                try {
+                    onShopSettings(res.shop_settings);
+                } catch (e) {
+                    note("settings handler failed", { message: e?.message }, "warn");
                 }
             }
 
@@ -600,7 +617,12 @@ export function createRTCMesh({
             const self = getSelfInfo();
             for (const conn of conns.values()) {
                 if (conn.verified && conn.state === "open") {
-                    sendRaw(conn, { t: "info", name: self.name, canPrint: !!self.canPrint });
+                    sendRaw(conn, {
+                        t: "info",
+                        name: self.name,
+                        canPrint: !!self.canPrint,
+                        isKitchen: !!self.isKitchen,
+                    });
                 }
             }
             announceDirty = true;

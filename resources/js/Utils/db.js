@@ -141,6 +141,19 @@ export const saveOrderLocal = async (orderData) => {
     });
 };
 
+/**
+ * The next order number for this shift: 1, 2, 3 ... It carries on from orders
+ * that arrived from other devices, so numbers stay in step across the shop.
+ * Two devices that are cut off from each other can pick the same number, which
+ * is why the kitchen ticket also shows who rang the order and when.
+ */
+export const nextOrderNo = async (shiftId) => {
+    if (!shiftId) return 1;
+    const orders = await db.orders.where("shift_id").equals(shiftId).toArray();
+    const highest = orders.reduce((max, o) => Math.max(max, parseInt(o.order_no, 10) || 0), 0);
+    return Math.max(highest, orders.length) + 1;
+};
+
 export const saveTableLocal = async (tableData) => {
     return await db.open_tables.put({
         ...tableData,
@@ -335,6 +348,7 @@ export const updateTableItemsLocal = async (tableId, newItems) => {
                 unit_price: item.unit_price,
                 subtotal: item.subtotal,
                 metadata: item.metadata || { type: "unit" },
+                is_kitchen: !!item.is_kitchen,
                 synced_at: null,
             });
         }
@@ -380,6 +394,7 @@ export const syncInventoryLocal = async () => {
         if (data.categories && data.categories.length > 0) {
             await db.categories.bulkPut(
                 data.categories.map((c) => ({
+                    is_kitchen: !!c.is_kitchen,
                     id: c.id,
                     shop_id: c.shop_id,
                     name: c.name,
