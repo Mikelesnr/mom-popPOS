@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Cache;
  *
  *  - auto_print_receipts: print the customer receipt when an order or table is paid
  *  - kitchen_category_ids: categories whose items go to the kitchen printer
+ *  - bar_category_ids: categories whose items print a bar slip on the bar printer
  *
  * Cached briefly because devices ask every few seconds. Anything that changes
  * these values must call forget().
@@ -28,6 +29,12 @@ class ShopPrintSettings
                 'kitchen_category_ids' => Category::query()
                     ->where('shop_id', $shopId)
                     ->where('is_kitchen', true)
+                    ->pluck('id')
+                    ->values()
+                    ->all(),
+                'bar_category_ids' => Category::query()
+                    ->where('shop_id', $shopId)
+                    ->where('is_bar', true)
                     ->pluck('id')
                     ->values()
                     ->all(),

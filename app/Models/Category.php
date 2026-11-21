@@ -17,12 +17,14 @@ class Category extends Model
         'name',
         'slug',
         'is_kitchen',
+        'is_bar',
     ];
 
     protected function casts(): array
     {
         return [
             'is_kitchen' => 'boolean',
+            'is_bar' => 'boolean',
         ];
     }
 

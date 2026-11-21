@@ -27,6 +27,7 @@ export default function CategoryManager({ open, onClose }) {
     const [creating, setCreating] = useState(false);
     const [createError, setCreateError] = useState(null);
     const [newKitchen, setNewKitchen] = useState(false);
+    const [newBar, setNewBar] = useState(false);
     const [togglingId, setTogglingId] = useState(null);
 
     const [editingId, setEditingId] = useState(null);
@@ -64,10 +65,12 @@ export default function CategoryManager({ open, onClose }) {
                 name,
                 slug: slugify(name),
                 is_kitchen: newKitchen,
+                is_bar: newBar,
             });
             await db.categories.put(res.data);
             setNewName("");
             setNewKitchen(false);
+            setNewBar(false);
             toast.success(`"${res.data.name}" added.`);
         } catch (err) {
             const message =
@@ -117,10 +120,16 @@ export default function CategoryManager({ open, onClose }) {
         }
     };
 
-    // Switch a category between "kitchen" and "bar / counter". Items in a
-    // kitchen category are sent to the kitchen printer when an order is placed.
-    const toggleKitchen = async (cat) => {
-        setTogglingId(cat.id);
+    // Switch a category's station on or off. Items in a kitchen category print
+    // on the kitchen printer, and items in a bar category print a slip on the
+    // bar printer, when an order is placed. A category can be neither.
+    const STATIONS = {
+        is_kitchen: { label: "Kitchen", on: "now prints in the kitchen", off: "no longer prints in the kitchen" },
+        is_bar: { label: "Bar", on: "now prints a bar slip", off: "no longer prints a bar slip" },
+    };
+
+    const toggleStation = async (cat, field) => {
+        setTogglingId(`${cat.id}:${field}`);
         setEditError(null);
         try {
             const res = await axios.put(
@@ -128,14 +137,12 @@ export default function CategoryManager({ open, onClose }) {
                 {
                     name: cat.name,
                     slug: slugify(cat.name),
-                    is_kitchen: !cat.is_kitchen,
+                    [field]: !cat[field],
                 },
             );
             await db.categories.put(res.data);
             toast.success(
-                res.data.is_kitchen
-                    ? `"${res.data.name}" now prints in the kitchen.`
-                    : `"${res.data.name}" no longer prints in the kitchen.`,
+                `"${res.data.name}" ${res.data[field] ? STATIONS[field].on : STATIONS[field].off}.`,
             );
         } catch (err) {
             toast.error(
@@ -226,6 +233,22 @@ export default function CategoryManager({ open, onClose }) {
                             </span>
                         </span>
                     </label>
+                    <label className="flex items-start gap-2 mt-2 text-xs text-gray-600 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={newBar}
+                            onChange={(e) => setNewBar(e.target.checked)}
+                            className="mt-0.5 rounded border-gray-300"
+                        />
+                        <span>
+                            Bar category
+                            <span className="block text-gray-400">
+                                A slip prints at the bar when a waiter rings these
+                                up, so nothing leaves the bar without being on the
+                                bill.
+                            </span>
+                        </span>
+                    </label>
                     {createError && (
                         <p className="text-red-600 text-xs mt-1.5">
                             {createError}
@@ -258,24 +281,29 @@ export default function CategoryManager({ open, onClose }) {
                                         <span className="text-sm text-gray-800 truncate">
                                             {cat.name}
                                         </span>
-                                        <button
-                                            type="button"
-                                            onClick={() => toggleKitchen(cat)}
-                                            disabled={togglingId === cat.id}
-                                            aria-pressed={!!cat.is_kitchen}
-                                            title={
-                                                cat.is_kitchen
-                                                    ? "Prints in the kitchen. Tap to turn off."
-                                                    : "Tap to print this category in the kitchen."
-                                            }
-                                            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold border disabled:opacity-50 ${
-                                                cat.is_kitchen
-                                                    ? "bg-orange-100 text-orange-800 border-orange-200"
-                                                    : "bg-white text-gray-400 border-gray-200 hover:text-gray-600"
-                                            }`}
-                                        >
-                                            Kitchen
-                                        </button>
+                                        {Object.entries(STATIONS).map(([field, st]) => (
+                                            <button
+                                                key={field}
+                                                type="button"
+                                                onClick={() => toggleStation(cat, field)}
+                                                disabled={togglingId === `${cat.id}:${field}`}
+                                                aria-pressed={!!cat[field]}
+                                                title={
+                                                    cat[field]
+                                                        ? `${st.label} category. Tap to turn off.`
+                                                        : `Tap to make this a ${st.label.toLowerCase()} category.`
+                                                }
+                                                className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold border disabled:opacity-50 ${
+                                                    cat[field]
+                                                        ? field === "is_kitchen"
+                                                            ? "bg-orange-100 text-orange-800 border-orange-200"
+                                                            : "bg-sky-100 text-sky-800 border-sky-200"
+                                                        : "bg-white text-gray-400 border-gray-200 hover:text-gray-600"
+                                                }`}
+                                            >
+                                                {st.label}
+                                            </button>
+                                        ))}
                                     </div>
                                 )}
 

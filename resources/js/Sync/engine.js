@@ -19,6 +19,8 @@ const KEYS = {
     canPrint: "terminal_can_print",
     isKitchen: "terminal_is_kitchen",
     knownKitchens: "terminal_known_kitchens",
+    isBar: "terminal_is_bar",
+    knownBars: "terminal_known_bars",
     shopSettings: "terminal_shop_settings",
     routeBill: "terminal_route_bill",
     hlc: "mesh_hlc",
@@ -67,6 +69,10 @@ export function createEngine({
         // This device has the kitchen printer. Items in kitchen categories are
         // sent here automatically from every device in the shop.
         isKitchen: storage.get(KEYS.isKitchen) === "1",
+        // This device has the bar printer. When someone who is not working in
+        // the bar rings up bar items, a slip prints here so the bar knows it
+        // was rung up before anything leaves.
+        isBar: storage.get(KEYS.isBar) === "1",
     };
     // Where bills print. Kitchen tickets need no setting: they go to every
     // device that says it is the kitchen.
@@ -88,14 +94,21 @@ export function createEngine({
     let knownKitchens = readJson(KEYS.knownKitchens, []);
     if (!Array.isArray(knownKitchens)) knownKitchens = [];
 
+    // Same for bar devices.
+    let knownBars = readJson(KEYS.knownBars, []);
+    if (!Array.isArray(knownBars)) knownBars = [];
+
     // Settings the server sends with every poll. The last value is kept so
     // devices behave the same when the server cannot be reached.
-    // kitchenCategoryIds is null until the server has been heard at least once.
+    // The category id lists are null until the server has been heard at least once.
     const savedSettings = readJson(KEYS.shopSettings, {});
     let shopSettings = {
         autoPrintReceipts: !!savedSettings.autoPrintReceipts,
         kitchenCategoryIds: Array.isArray(savedSettings.kitchenCategoryIds)
             ? savedSettings.kitchenCategoryIds
+            : null,
+        barCategoryIds: Array.isArray(savedSettings.barCategoryIds)
+            ? savedSettings.barCategoryIds
             : null,
     };
 
@@ -120,7 +133,9 @@ export function createEngine({
             name: self.name,
             canPrint: self.canPrint,
             isKitchen: self.isKitchen,
+            isBar: self.isBar,
             knownKitchens,
+            knownBars,
             shopSettings,
             routes: { ...routes },
             peers: state.peers,
@@ -159,8 +174,8 @@ export function createEngine({
     const printService = createPrintService({
         bus,
         deviceId,
-        // A kitchen device accepts jobs even if it was never marked as a bill printer.
-        getSelf: () => ({ canPrint: self.canPrint || self.isKitchen }),
+        // Kitchen and bar devices accept jobs even if they were never marked as a bill printer.
+        getSelf: () => ({ canPrint: self.canPrint || self.isKitchen || self.isBar }),
         onJob: (job) =>
             printHost
                 ? printHost.enqueue(job)
@@ -195,25 +210,38 @@ export function createEngine({
             name: p.name,
             canPrint: !!p.canPrint,
             isKitchen: !!p.isKitchen,
+            isBar: !!p.isBar,
         }));
-        rememberKitchens(state.peers);
+        rememberStations(state.peers);
         touch();
     });
 
-    function rememberKitchens(peers) {
-        let next = knownKitchens.slice();
+    // Keep a list of the devices that said they were a station (kitchen or
+    // bar), dropping any that stopped being one.
+    const updateStations = (list, peers, flag) => {
+        const next = list.slice();
         for (const p of peers) {
             const at = next.findIndex((k) => k.id === p.id);
-            if (p.isKitchen) {
+            if (p[flag]) {
                 if (at === -1) next.push({ id: p.id, name: p.name });
                 else if (next[at].name !== p.name) next[at] = { id: p.id, name: p.name };
             } else if (at !== -1) {
-                next.splice(at, 1); // it stopped being the kitchen
+                next.splice(at, 1);
             }
         }
-        if (JSON.stringify(next) !== JSON.stringify(knownKitchens)) {
-            knownKitchens = next;
+        return next;
+    };
+
+    function rememberStations(peers) {
+        const kitchens = updateStations(knownKitchens, peers, "isKitchen");
+        if (JSON.stringify(kitchens) !== JSON.stringify(knownKitchens)) {
+            knownKitchens = kitchens;
             storage.set(KEYS.knownKitchens, JSON.stringify(knownKitchens));
+        }
+        const bars = updateStations(knownBars, peers, "isBar");
+        if (JSON.stringify(bars) !== JSON.stringify(knownBars)) {
+            knownBars = bars;
+            storage.set(KEYS.knownBars, JSON.stringify(knownBars));
         }
     }
 
@@ -227,6 +255,9 @@ export function createEngine({
             kitchenCategoryIds: Array.isArray(raw.kitchen_category_ids)
                 ? raw.kitchen_category_ids.map(String)
                 : shopSettings.kitchenCategoryIds,
+            barCategoryIds: Array.isArray(raw.bar_category_ids)
+                ? raw.bar_category_ids.map(String)
+                : shopSettings.barCategoryIds,
         };
         if (JSON.stringify(next) === JSON.stringify(shopSettings)) return;
         shopSettings = next;
@@ -292,6 +323,14 @@ export function createEngine({
             touch();
         },
 
+        /** This device has the bar printer. Bar slips from every device print here. */
+        setBar(flag) {
+            self.isBar = !!flag;
+            storage.set(KEYS.isBar, self.isBar ? "1" : "0");
+            mesh.announce();
+            touch();
+        },
+
         /** kind: "bill". id: a device id, or "" for this device. */
         setRoute(kind, id) {
             if (kind !== "bill") return;
@@ -321,10 +360,12 @@ export function createEngine({
                     name: self.name,
                     canPrint: self.canPrint,
                     isKitchen: self.isKitchen,
+                    isBar: self.isBar,
                     shopId,
                 },
                 shopSettings,
                 knownKitchens,
+                knownBars,
                 browser: {
                     userAgent: g.navigator?.userAgent,
                     secureContext: g.isSecureContext,

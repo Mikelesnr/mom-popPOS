@@ -20,7 +20,14 @@ import DeviceStatusPill from "./DeviceStatusPill";
 // too (gate: manage-shop-print-settings); this only decides what to show.
 const SETTINGS_ROLES = ["manager", "shop_manager"];
 
-const NO_SETTINGS = { autoPrintReceipts: false, kitchenCategoryIds: null };
+// Managers can say whether they are on the floor or working in the bar right now.
+const POSITION_ROLES = ["manager", "shop_manager"];
+
+const NO_SETTINGS = {
+    autoPrintReceipts: false,
+    kitchenCategoryIds: null,
+    barCategoryIds: null,
+};
 
 // What components get when there is no shop (owners, admins) or no provider.
 const INERT = {
@@ -32,8 +39,14 @@ const INERT = {
     shopSettings: NO_SETTINGS,
     isKitchen: false,
     knownKitchens: [],
+    isBar: false,
+    knownBars: [],
+    inBar: false,
+    canSwitchPosition: false,
     canManageShop: false,
     isKitchenCategory: (category) => !!category?.is_kitchen,
+    isBarCategory: (category) => !!category?.is_bar,
+    printBarSlip: () => false,
     printBill: () => false,
     printKitchenTicket: () => false,
     autoPrintReceipt: () => false,
@@ -58,6 +71,7 @@ export default function DeviceSyncProvider({ children }) {
     return (
         <ActiveProvider
             shopId={user.shop_id}
+            userId={user.id}
             userName={user.name}
             role={role}
         >
@@ -66,11 +80,37 @@ export default function DeviceSyncProvider({ children }) {
     );
 }
 
-function ActiveProvider({ shopId, userName, role, children }) {
+function ActiveProvider({ shopId, userId, userName, role, children }) {
     // The engine lives outside React, so moving between Inertia pages does not
     // tear down the connections to the other devices.
     const [engine] = useState(() => getEngine({ shopId, db }));
     const snap = useSyncExternalStore(engine.subscribe, engine.getSnapshot);
+
+    // Whether the person logged in is working in the bar right now. Bartenders
+    // always are. Managers choose, and the choice is kept for that manager on
+    // this device. Nobody else is.
+    const canSwitchPosition = POSITION_ROLES.includes(role);
+    const positionKey = `terminal_in_bar:${userId}`;
+    const [switchedToBar, setSwitchedToBar] = useState(
+        () => localStorage.getItem(positionKey) === "1",
+    );
+    useEffect(() => {
+        setSwitchedToBar(localStorage.getItem(positionKey) === "1");
+    }, [positionKey]);
+    const inBar = role === "bartender" || (canSwitchPosition && switchedToBar);
+
+    const setWorkingInBar = useCallback(
+        (value) => {
+            localStorage.setItem(positionKey, value ? "1" : "0");
+            setSwitchedToBar(!!value);
+            toast.success(
+                value
+                    ? "You are working in the bar. Your orders will not print bar slips."
+                    : "You are on the floor. Your bar orders print a bar slip again.",
+            );
+        },
+        [positionKey],
+    );
 
     const [shopName, setShopName] = useState(
         () => localStorage.getItem("terminal_shop_name") || "",
@@ -274,6 +314,80 @@ function ActiveProvider({ shopId, userName, role, children }) {
         [engine, snap.knownKitchens, kitchenTargets, shopName, userName],
     );
 
+    // The bar devices that can take a slip right now.
+    const barTargets = useMemo(
+        () => [
+            ...(snap.isBar ? [{ id: snap.deviceId, name: snap.name }] : []),
+            ...snap.peers.filter((p) => p.isBar).map((p) => ({ id: p.id, name: p.name })),
+        ],
+        [snap],
+    );
+
+    const isBarCategory = useCallback(
+        (category) => {
+            if (!category) return false;
+            const ids = snap.shopSettings.barCategoryIds;
+            return ids ? ids.includes(String(category.id)) : !!category.is_bar;
+        },
+        [snap.shopSettings.barCategoryIds],
+    );
+
+    // A slip on the bar printer for the bar items in an order, so the bar only
+    // hands out what was rung up. It is not printed for someone who is working
+    // in the bar (a bartender, or a manager who has switched to the bar). Returns
+    // true when a slip was sent.
+    const printBarSlip = useCallback(
+        ({ tableName, orderNo, items, isUpdate = false }) => {
+            const barItems = (items || []).filter((i) => i.is_bar);
+            if (barItems.length === 0) return false;
+            if (inBar) return false;
+
+            if (barTargets.length === 0) {
+                const known = snap.knownBars.map((b) => b.name).join(", ");
+                toast.error(
+                    known
+                        ? `${known} is offline. Bar slip NOT printed.`
+                        : "No bar device is linked. Bar slip NOT printed.",
+                    { duration: 8000 },
+                );
+                return false;
+            }
+
+            const job = {
+                template: "bar",
+                title: `Bar ${tableName || (orderNo ? `order ${orderNo}` : "")}`.trim(),
+                props: {
+                    shopName: shopName || "Mom&Pop POS",
+                    tableName: tableName || null,
+                    orderNo: orderNo ?? null,
+                    staff: userName,
+                    time: new Date().toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                    }),
+                    isUpdate,
+                    items: barItems.map((i) => ({
+                        quantity: i.quantity,
+                        name: i.name,
+                        metadata: i.metadata,
+                    })),
+                },
+            };
+
+            for (const t of barTargets) {
+                engine
+                    .sendPrint(t.id, job)
+                    .catch((err) =>
+                        toast.error(`${t.name}: ${err.message}. Bar slip NOT printed.`, {
+                            duration: 8000,
+                        }),
+                    );
+            }
+            return true;
+        },
+        [engine, inBar, snap.knownBars, barTargets, shopName, userName],
+    );
+
     const canManageShop = SETTINGS_ROLES.includes(role);
 
     // Managers only (also enforced by the server). Needs internet, because the
@@ -326,6 +440,11 @@ function ActiveProvider({ shopId, userName, role, children }) {
             canPrint: snap.canPrint,
             isKitchen: snap.isKitchen,
             knownKitchens: snap.knownKitchens,
+            isBar: snap.isBar,
+            knownBars: snap.knownBars,
+            inBar,
+            canSwitchPosition,
+            setWorkingInBar,
             shopSettings: snap.shopSettings,
             canManageShop,
             peers: snap.peers,
@@ -337,12 +456,15 @@ function ActiveProvider({ shopId, userName, role, children }) {
             setDeviceName: engine.setName,
             setCanPrint: engine.setCanPrint,
             setKitchen: engine.setKitchen,
+            setBar: engine.setBar,
             setRoute: engine.setRoute,
             setAutoPrintReceipts,
             syncNow: engine.syncNow,
             isKitchenCategory,
+            isBarCategory,
             printBill,
             printKitchenTicket,
+            printBarSlip,
             autoPrintReceipt,
             sendPrint,
         }),
@@ -351,10 +473,15 @@ function ActiveProvider({ shopId, userName, role, children }) {
             printers,
             engine,
             canManageShop,
+            canSwitchPosition,
+            inBar,
+            setWorkingInBar,
             setAutoPrintReceipts,
             isKitchenCategory,
+            isBarCategory,
             printBill,
             printKitchenTicket,
+            printBarSlip,
             autoPrintReceipt,
             sendPrint,
         ],

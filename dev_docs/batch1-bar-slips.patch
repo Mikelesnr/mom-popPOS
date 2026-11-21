@@ -1,0 +1,1530 @@
+diff --git a/app/Http/Controllers/Devices/DeviceSignalController.php b/app/Http/Controllers/Devices/DeviceSignalController.php
+index 1990074..d21e8df 100644
+--- a/app/Http/Controllers/Devices/DeviceSignalController.php
++++ b/app/Http/Controllers/Devices/DeviceSignalController.php
+@@ -52,6 +52,7 @@ public function poll(Request $request)
+             'name' => ['nullable', 'string', 'max:40'],
+             'can_print' => ['sometimes', 'boolean'],
+             'is_kitchen' => ['sometimes', 'boolean'],
++            'is_bar' => ['sometimes', 'boolean'],
+         ]);
+ 
+         $shopId = $user->shop_id;
+@@ -62,6 +63,7 @@ public function poll(Request $request)
+             'name' => $data['name'] ?? 'Device ' . strtoupper(substr($deviceId, 0, 4)),
+             'can_print' => (bool) ($data['can_print'] ?? false),
+             'is_kitchen' => (bool) ($data['is_kitchen'] ?? false),
++            'is_bar' => (bool) ($data['is_bar'] ?? false),
+             'user_name' => $user->name,
+         ], self::PRESENCE_TTL);
+ 
+diff --git a/app/Http/Controllers/Inventory/CategoryController.php b/app/Http/Controllers/Inventory/CategoryController.php
+index 437fe67..ee5f87d 100644
+--- a/app/Http/Controllers/Inventory/CategoryController.php
++++ b/app/Http/Controllers/Inventory/CategoryController.php
+@@ -77,6 +77,7 @@ public function store(Request $request)
+             ],
+             'slug' => ['nullable', 'string', 'max:255'],
+             'is_kitchen' => ['sometimes', 'boolean'],
++            'is_bar' => ['sometimes', 'boolean'],
+         ], [
+             'name.unique' => 'A category with this name already exists.',
+         ]);
+@@ -91,6 +92,7 @@ public function store(Request $request)
+                 'name' => $validated['name'],
+                 'slug' => Str::slug($validated['name']),
+                 'is_kitchen' => (bool) ($validated['is_kitchen'] ?? false),
++                'is_bar' => (bool) ($validated['is_bar'] ?? false),
+             ],
+         );
+ 
+@@ -121,6 +123,7 @@ public function update(Request $request, Category $category)
+             ],
+             'slug' => ['nullable', 'string', 'max:255'],
+             'is_kitchen' => ['sometimes', 'boolean'],
++            'is_bar' => ['sometimes', 'boolean'],
+         ], [
+             'name.unique' => 'A category with this name already exists.',
+         ]);
+@@ -131,6 +134,9 @@ public function update(Request $request, Category $category)
+             'is_kitchen' => array_key_exists('is_kitchen', $validated)
+                 ? (bool) $validated['is_kitchen']
+                 : $category->is_kitchen,
++            'is_bar' => array_key_exists('is_bar', $validated)
++                ? (bool) $validated['is_bar']
++                : $category->is_bar,
+         ]);
+ 
+         ShopPrintSettings::forget($category->shop_id);
+diff --git a/app/Http/Resources/CategoryMenuResource.php b/app/Http/Resources/CategoryMenuResource.php
+index 4e5b9a6..095aa09 100644
+--- a/app/Http/Resources/CategoryMenuResource.php
++++ b/app/Http/Resources/CategoryMenuResource.php
+@@ -17,6 +17,7 @@ public function toArray(Request $request): array
+             'name' => $this->name,
+             'slug' => $this->slug,
+             'is_kitchen' => (bool) $this->is_kitchen,
++            'is_bar' => (bool) $this->is_bar,
+             'products' => ProductMenuResource::collection($this->products),
+         ];
+     }
+diff --git a/app/Models/Category.php b/app/Models/Category.php
+index 5edc913..8513a9d 100644
+--- a/app/Models/Category.php
++++ b/app/Models/Category.php
+@@ -17,12 +17,14 @@ class Category extends Model
+         'name',
+         'slug',
+         'is_kitchen',
++        'is_bar',
+     ];
+ 
+     protected function casts(): array
+     {
+         return [
+             'is_kitchen' => 'boolean',
++            'is_bar' => 'boolean',
+         ];
+     }
+ 
+diff --git a/app/Services/ShopPrintSettings.php b/app/Services/ShopPrintSettings.php
+index 3ca4e32..f39854c 100644
+--- a/app/Services/ShopPrintSettings.php
++++ b/app/Services/ShopPrintSettings.php
+@@ -12,6 +12,7 @@
+  *
+  *  - auto_print_receipts: print the customer receipt when an order or table is paid
+  *  - kitchen_category_ids: categories whose items go to the kitchen printer
++ *  - bar_category_ids: categories whose items print a bar slip on the bar printer
+  *
+  * Cached briefly because devices ask every few seconds. Anything that changes
+  * these values must call forget().
+@@ -31,6 +32,12 @@ public static function for(string $shopId): array
+                     ->pluck('id')
+                     ->values()
+                     ->all(),
++                'bar_category_ids' => Category::query()
++                    ->where('shop_id', $shopId)
++                    ->where('is_bar', true)
++                    ->pluck('id')
++                    ->values()
++                    ->all(),
+             ];
+         });
+     }
+diff --git a/database/migrations/2026_11_19_090000_add_bar_flag_to_categories.php b/database/migrations/2026_11_19_090000_add_bar_flag_to_categories.php
+new file mode 100644
+index 0000000..d97cee8
+--- /dev/null
++++ b/database/migrations/2026_11_19_090000_add_bar_flag_to_categories.php
+@@ -0,0 +1,25 @@
++<?php
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\Schema;
++
++return new class extends Migration
++{
++    public function up(): void
++    {
++        // Items in a bar category print a slip on the bar device when a waiter
++        // (or anyone not working in the bar) rings them up, so nothing leaves
++        // the bar without being on the bill.
++        Schema::table('categories', function (Blueprint $table) {
++            $table->boolean('is_bar')->default(false)->after('is_kitchen');
++        });
++    }
++
++    public function down(): void
++    {
++        Schema::table('categories', function (Blueprint $table) {
++            $table->dropColumn('is_bar');
++        });
++    }
++};
+diff --git a/dev_docs/device_mesh.md b/dev_docs/device_mesh.md
+index ede44f6..9e822de 100644
+--- a/dev_docs/device_mesh.md
++++ b/dev_docs/device_mesh.md
+@@ -49,6 +49,31 @@ ## Kitchen tickets and receipts
+   need anyone to press Sync. The flag that comes with the catalog is only used
+   until the server has been heard once.
+ 
++## Bar slips
++
++Bar slips stop drinks leaving the bar without being rung up. When a waiter (or
++anyone not working in the bar) rings up bar items, a slip prints on the bar
++printer, so the bartender only hands out what is on a slip.
++
++- Mark categories as **Bar** in the category manager, the same way as kitchen
++  categories. A category can be kitchen, bar, both, or neither.
++- On the device with the bar printer, tick "This is the bar device". Like the
++  kitchen device, it does not become a bill printer.
++- The slip is sent when an order is placed (Fast Sale), a table is opened, or
++  items are added to a table. It carries only the bar items, with the staff
++  name, the table name or order number, the time and the quantities. No prices.
++- **Who does not trigger a slip:** bartenders never do. Managers and shop
++  managers have a "Where are you working?" switch in the Shop devices panel:
++  while set to "In the bar" their orders print no slip, and set back to "On the
++  floor" they do, like a waiter. The choice is remembered for that person on that
++  device and starts on "On the floor".
++- If there is no bar device linked, the sale is still saved and the waiter sees
++  "Bar slip NOT printed" (naming the bar if it was seen before). There is no
++  fallback to another printer.
++- The bar categories reach every device within seconds, with the regular poll,
++  the same as kitchen categories.
++- Run `php artisan migrate` (adds `categories.is_bar`, off by default).
++
+ ### Automatic receipts (managers)
+ 
+ By default nothing changes: receipts print when someone taps Print. A manager,
+diff --git a/resources/js/Components/Devices/DeviceStatusPill.jsx b/resources/js/Components/Devices/DeviceStatusPill.jsx
+index 67bac45..342e32b 100644
+--- a/resources/js/Components/Devices/DeviceStatusPill.jsx
++++ b/resources/js/Components/Devices/DeviceStatusPill.jsx
+@@ -157,6 +157,56 @@ export default function DeviceStatusPill() {
+                             they are rung.
+                         </p>
+                     )}
++                    <label className="flex min-h-[44px] items-center gap-3 text-sm text-stone-700">
++                        <input
++                            type="checkbox"
++                            checked={sync.isBar}
++                            onChange={(e) => sync.setBar(e.target.checked)}
++                            className="h-5 w-5 rounded border-stone-300 text-[#14352E] focus:ring-[#14352E]"
++                        />
++                        This is the bar device
++                    </label>
++                    {sync.isBar && (
++                        <p className="mb-1 text-xs text-stone-500">
++                            When a waiter rings up bar items, a slip prints here so nothing
++                            leaves the bar without being on the bill. Slips are not printed
++                            for bartenders, or for managers working in the bar.
++                        </p>
++                    )}
++
++                    {/* Managers can say where they are working right now */}
++                    {sync.canSwitchPosition && (
++                        <div className="mt-2">
++                            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-stone-500">
++                                Where are you working?
++                            </p>
++                            <div className="grid grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1">
++                                {[
++                                    { value: false, label: "On the floor" },
++                                    { value: true, label: "In the bar" },
++                                ].map((o) => (
++                                    <button
++                                        key={o.label}
++                                        type="button"
++                                        onClick={() => sync.setWorkingInBar(o.value)}
++                                        aria-pressed={sync.inBar === o.value}
++                                        className={`min-h-[44px] rounded-lg text-sm font-semibold ${
++                                            sync.inBar === o.value
++                                                ? "bg-[#14352E] text-white shadow"
++                                                : "text-stone-600 hover:bg-stone-200"
++                                        }`}
++                                    >
++                                        {o.label}
++                                    </button>
++                                ))}
++                            </div>
++                            <p className="mt-1 text-xs text-stone-500">
++                                {sync.inBar
++                                    ? "Your orders do not print bar slips while you work in the bar."
++                                    : "Your bar orders print a slip on the bar device, like a waiter's."}
++                            </p>
++                        </div>
++                    )}
+ 
+                     {/* Other devices */}
+                     <div className="mt-4 border-t border-stone-100 pt-3">
+@@ -175,6 +225,11 @@ export default function DeviceStatusPill() {
+                                                         Kitchen
+                                                     </span>
+                                                 )}
++                                                {p.isBar && (
++                                                    <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800">
++                                                        Bar
++                                                    </span>
++                                                )}
+                                                 {p.canPrint && (
+                                                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                                                         Printer
+diff --git a/resources/js/Components/Devices/DeviceSyncProvider.jsx b/resources/js/Components/Devices/DeviceSyncProvider.jsx
+index 211cee7..65efcef 100644
+--- a/resources/js/Components/Devices/DeviceSyncProvider.jsx
++++ b/resources/js/Components/Devices/DeviceSyncProvider.jsx
+@@ -20,7 +20,14 @@ import DeviceStatusPill from "./DeviceStatusPill";
+ // too (gate: manage-shop-print-settings); this only decides what to show.
+ const SETTINGS_ROLES = ["manager", "shop_manager"];
+ 
+-const NO_SETTINGS = { autoPrintReceipts: false, kitchenCategoryIds: null };
++// Managers can say whether they are on the floor or working in the bar right now.
++const POSITION_ROLES = ["manager", "shop_manager"];
++
++const NO_SETTINGS = {
++    autoPrintReceipts: false,
++    kitchenCategoryIds: null,
++    barCategoryIds: null,
++};
+ 
+ // What components get when there is no shop (owners, admins) or no provider.
+ const INERT = {
+@@ -32,8 +39,14 @@ const INERT = {
+     shopSettings: NO_SETTINGS,
+     isKitchen: false,
+     knownKitchens: [],
++    isBar: false,
++    knownBars: [],
++    inBar: false,
++    canSwitchPosition: false,
+     canManageShop: false,
+     isKitchenCategory: (category) => !!category?.is_kitchen,
++    isBarCategory: (category) => !!category?.is_bar,
++    printBarSlip: () => false,
+     printBill: () => false,
+     printKitchenTicket: () => false,
+     autoPrintReceipt: () => false,
+@@ -58,6 +71,7 @@ export default function DeviceSyncProvider({ children }) {
+     return (
+         <ActiveProvider
+             shopId={user.shop_id}
++            userId={user.id}
+             userName={user.name}
+             role={role}
+         >
+@@ -66,12 +80,38 @@ export default function DeviceSyncProvider({ children }) {
+     );
+ }
+ 
+-function ActiveProvider({ shopId, userName, role, children }) {
++function ActiveProvider({ shopId, userId, userName, role, children }) {
+     // The engine lives outside React, so moving between Inertia pages does not
+     // tear down the connections to the other devices.
+     const [engine] = useState(() => getEngine({ shopId, db }));
+     const snap = useSyncExternalStore(engine.subscribe, engine.getSnapshot);
+ 
++    // Whether the person logged in is working in the bar right now. Bartenders
++    // always are. Managers choose, and the choice is kept for that manager on
++    // this device. Nobody else is.
++    const canSwitchPosition = POSITION_ROLES.includes(role);
++    const positionKey = `terminal_in_bar:${userId}`;
++    const [switchedToBar, setSwitchedToBar] = useState(
++        () => localStorage.getItem(positionKey) === "1",
++    );
++    useEffect(() => {
++        setSwitchedToBar(localStorage.getItem(positionKey) === "1");
++    }, [positionKey]);
++    const inBar = role === "bartender" || (canSwitchPosition && switchedToBar);
++
++    const setWorkingInBar = useCallback(
++        (value) => {
++            localStorage.setItem(positionKey, value ? "1" : "0");
++            setSwitchedToBar(!!value);
++            toast.success(
++                value
++                    ? "You are working in the bar. Your orders will not print bar slips."
++                    : "You are on the floor. Your bar orders print a bar slip again.",
++            );
++        },
++        [positionKey],
++    );
++
+     const [shopName, setShopName] = useState(
+         () => localStorage.getItem("terminal_shop_name") || "",
+     );
+@@ -274,6 +314,80 @@ function ActiveProvider({ shopId, userName, role, children }) {
+         [engine, snap.knownKitchens, kitchenTargets, shopName, userName],
+     );
+ 
++    // The bar devices that can take a slip right now.
++    const barTargets = useMemo(
++        () => [
++            ...(snap.isBar ? [{ id: snap.deviceId, name: snap.name }] : []),
++            ...snap.peers.filter((p) => p.isBar).map((p) => ({ id: p.id, name: p.name })),
++        ],
++        [snap],
++    );
++
++    const isBarCategory = useCallback(
++        (category) => {
++            if (!category) return false;
++            const ids = snap.shopSettings.barCategoryIds;
++            return ids ? ids.includes(String(category.id)) : !!category.is_bar;
++        },
++        [snap.shopSettings.barCategoryIds],
++    );
++
++    // A slip on the bar printer for the bar items in an order, so the bar only
++    // hands out what was rung up. It is not printed for someone who is working
++    // in the bar (a bartender, or a manager who has switched to the bar). Returns
++    // true when a slip was sent.
++    const printBarSlip = useCallback(
++        ({ tableName, orderNo, items, isUpdate = false }) => {
++            const barItems = (items || []).filter((i) => i.is_bar);
++            if (barItems.length === 0) return false;
++            if (inBar) return false;
++
++            if (barTargets.length === 0) {
++                const known = snap.knownBars.map((b) => b.name).join(", ");
++                toast.error(
++                    known
++                        ? `${known} is offline. Bar slip NOT printed.`
++                        : "No bar device is linked. Bar slip NOT printed.",
++                    { duration: 8000 },
++                );
++                return false;
++            }
++
++            const job = {
++                template: "bar",
++                title: `Bar ${tableName || (orderNo ? `order ${orderNo}` : "")}`.trim(),
++                props: {
++                    shopName: shopName || "Mom&Pop POS",
++                    tableName: tableName || null,
++                    orderNo: orderNo ?? null,
++                    staff: userName,
++                    time: new Date().toLocaleTimeString([], {
++                        hour: "2-digit",
++                        minute: "2-digit",
++                    }),
++                    isUpdate,
++                    items: barItems.map((i) => ({
++                        quantity: i.quantity,
++                        name: i.name,
++                        metadata: i.metadata,
++                    })),
++                },
++            };
++
++            for (const t of barTargets) {
++                engine
++                    .sendPrint(t.id, job)
++                    .catch((err) =>
++                        toast.error(`${t.name}: ${err.message}. Bar slip NOT printed.`, {
++                            duration: 8000,
++                        }),
++                    );
++            }
++            return true;
++        },
++        [engine, inBar, snap.knownBars, barTargets, shopName, userName],
++    );
++
+     const canManageShop = SETTINGS_ROLES.includes(role);
+ 
+     // Managers only (also enforced by the server). Needs internet, because the
+@@ -326,6 +440,11 @@ function ActiveProvider({ shopId, userName, role, children }) {
+             canPrint: snap.canPrint,
+             isKitchen: snap.isKitchen,
+             knownKitchens: snap.knownKitchens,
++            isBar: snap.isBar,
++            knownBars: snap.knownBars,
++            inBar,
++            canSwitchPosition,
++            setWorkingInBar,
+             shopSettings: snap.shopSettings,
+             canManageShop,
+             peers: snap.peers,
+@@ -337,12 +456,15 @@ function ActiveProvider({ shopId, userName, role, children }) {
+             setDeviceName: engine.setName,
+             setCanPrint: engine.setCanPrint,
+             setKitchen: engine.setKitchen,
++            setBar: engine.setBar,
+             setRoute: engine.setRoute,
+             setAutoPrintReceipts,
+             syncNow: engine.syncNow,
+             isKitchenCategory,
++            isBarCategory,
+             printBill,
+             printKitchenTicket,
++            printBarSlip,
+             autoPrintReceipt,
+             sendPrint,
+         }),
+@@ -351,10 +473,15 @@ function ActiveProvider({ shopId, userName, role, children }) {
+             printers,
+             engine,
+             canManageShop,
++            canSwitchPosition,
++            inBar,
++            setWorkingInBar,
+             setAutoPrintReceipts,
+             isKitchenCategory,
++            isBarCategory,
+             printBill,
+             printKitchenTicket,
++            printBarSlip,
+             autoPrintReceipt,
+             sendPrint,
+         ],
+diff --git a/resources/js/Components/Devices/RemotePrintHost.jsx b/resources/js/Components/Devices/RemotePrintHost.jsx
+index 3b87dc1..41401a5 100644
+--- a/resources/js/Components/Devices/RemotePrintHost.jsx
++++ b/resources/js/Components/Devices/RemotePrintHost.jsx
+@@ -12,10 +12,13 @@ import { KitchenTicket } from "@/Components/Sales/KitchenTicket";
+ import { ReceiptTemplate } from "@/Components/Shared/ReceiptTemplate";
+ 
+ // Job templates other devices are allowed to ask this one to print.
++const BarSlip = (props) => <KitchenTicket {...props} station="BAR" />;
++
+ const TEMPLATES = {
+     bill: BillTemplate,
+     receipt: ReceiptTemplate,
+     kitchen: KitchenTicket,
++    bar: BarSlip,
+ };
+ 
+ /**
+diff --git a/resources/js/Components/Sales/CheckoutOrderButton.jsx b/resources/js/Components/Sales/CheckoutOrderButton.jsx
+index d90e104..ea261c0 100644
+--- a/resources/js/Components/Sales/CheckoutOrderButton.jsx
++++ b/resources/js/Components/Sales/CheckoutOrderButton.jsx
+@@ -13,7 +13,7 @@ export default function CheckoutOrderButton({
+     cartTotal,
+ }) {
+     const [showPayment, setShowPayment] = useState(false);
+-    const { printKitchenTicket, autoPrintReceipt } = useDeviceSync();
++    const { printKitchenTicket, printBarSlip, autoPrintReceipt } = useDeviceSync();
+ 
+     // finalizeCheckout now receives the paymentData object from modal
+     const finalizeCheckout = async (paymentData) => {
+@@ -52,6 +52,7 @@ export default function CheckoutOrderButton({
+                     subtotal: item.subtotal,
+                     metadata: item.metadata || { type: "unit" },
+                     is_kitchen: !!item.is_kitchen,
++                    is_bar: !!item.is_bar,
+                 });
+             }
+ 
+@@ -59,6 +60,8 @@ export default function CheckoutOrderButton({
+             try {
+                 // Kitchen items only, to the kitchen device (if any are in the order).
+                 printKitchenTicket({ orderNo, items: cart, isUpdate: false });
++                // Bar items, to the bar device, unless the person ringing is in the bar.
++                printBarSlip({ orderNo, items: cart, isUpdate: false });
+                 // The customer's receipt, only if a manager turned auto-print on.
+                 autoPrintReceipt({
+                     title: `Receipt #${orderNo}`,
+diff --git a/resources/js/Components/Sales/CheckoutTableButton.jsx b/resources/js/Components/Sales/CheckoutTableButton.jsx
+index dfe90dc..4148ae4 100644
+--- a/resources/js/Components/Sales/CheckoutTableButton.jsx
++++ b/resources/js/Components/Sales/CheckoutTableButton.jsx
+@@ -7,7 +7,7 @@ import { useDeviceSync } from "@/Components/Devices/DeviceSyncProvider";
+ export default function CheckoutTableButton({ cart, auth, onClearCart }) {
+     const [isNameModalOpen, setIsNameModalOpen] = useState(false);
+     const [tableName, setTableName] = useState("");
+-    const { printKitchenTicket } = useDeviceSync();
++    const { printKitchenTicket, printBarSlip } = useDeviceSync();
+ 
+     const cartTotal = cart.reduce(
+         (sum, i) => sum + (parseFloat(i.subtotal) || 0),
+@@ -45,12 +45,14 @@ export default function CheckoutTableButton({ cart, auth, onClearCart }) {
+                     subtotal: item.subtotal,
+                     metadata: item.metadata || { type: "unit" },
+                     is_kitchen: !!item.is_kitchen,
++                    is_bar: !!item.is_bar,
+                 });
+             }
+ 
+             // Kitchen items only, to the kitchen device. Never blocks opening the table.
+             try {
+                 printKitchenTicket({ tableName, items: cart, isUpdate: false });
++                printBarSlip({ tableName, items: cart, isUpdate: false });
+             } catch (printError) {
+                 console.error("Kitchen ticket failed:", printError);
+             }
+diff --git a/resources/js/Components/Sales/KitchenTicket.jsx b/resources/js/Components/Sales/KitchenTicket.jsx
+index fe41962..7b36a40 100644
+--- a/resources/js/Components/Sales/KitchenTicket.jsx
++++ b/resources/js/Components/Sales/KitchenTicket.jsx
+@@ -1,5 +1,6 @@
+-// Kitchen / prep ticket: big, no prices, easy to read from a distance.
+-// Shows who rang it up and which table or order it is for.
++// Kitchen and bar ticket: big, no prices, easy to read from a distance.
++// Shows who rang it up and which table or order it is for. The same layout is
++// used for both stations; `station` is the name printed at the top.
+ 
+ export const KitchenTicket = ({
+     shopName,
+@@ -9,6 +10,7 @@ export const KitchenTicket = ({
+     time,
+     items = [],
+     isUpdate = false,
++    station = "KITCHEN",
+ }) => {
+     // A table prints its name. A fast sale prints its order number.
+     const label = tableName ? "TABLE" : "ORDER";
+@@ -19,6 +21,9 @@ export const KitchenTicket = ({
+             <p className="text-center text-xs uppercase tracking-widest">
+                 {shopName}
+             </p>
++            <p className="text-center text-sm font-black tracking-widest mt-1">
++                {station}
++            </p>
+             <p className="text-center text-xs font-bold mt-2">{label}</p>
+             <h2 className="text-center text-4xl font-black uppercase leading-tight">
+                 {reference}
+diff --git a/resources/js/Components/Sales/Partials/TicketCart.jsx b/resources/js/Components/Sales/Partials/TicketCart.jsx
+index 816eec6..6cde228 100644
+--- a/resources/js/Components/Sales/Partials/TicketCart.jsx
++++ b/resources/js/Components/Sales/Partials/TicketCart.jsx
+@@ -16,7 +16,7 @@ export default function TicketCart({
+     onPrint,
+ }) {
+     const [activePaymentContext, setActivePaymentContext] = useState(null);
+-    const { printKitchenTicket, autoPrintReceipt } = useDeviceSync();
++    const { printKitchenTicket, printBarSlip, autoPrintReceipt } = useDeviceSync();
+ 
+     const cartTotal = cart.reduce(
+         (sum, item) => sum + (parseFloat(item.subtotal) || 0),
+@@ -67,6 +67,11 @@ export default function TicketCart({
+                     items: newItems,
+                     isUpdate: true,
+                 });
++                printBarSlip({
++                    tableName: activeTable.name,
++                    items: newItems,
++                    isUpdate: true,
++                });
+             } catch (printError) {
+                 console.error("Kitchen ticket failed:", printError);
+             }
+diff --git a/resources/js/Components/Sales/TerminalPointOfSale.jsx b/resources/js/Components/Sales/TerminalPointOfSale.jsx
+index b3280c4..9725895 100644
+--- a/resources/js/Components/Sales/TerminalPointOfSale.jsx
++++ b/resources/js/Components/Sales/TerminalPointOfSale.jsx
+@@ -59,7 +59,7 @@ export default function TerminalPointOfSale() {
+ 
+     // If a bill printer on another device is selected (Shop devices panel),
+     // send the bill there. Returns false to fall through to local printing.
+-    const { printBill, isKitchenCategory } = useDeviceSync();
++    const { printBill, isKitchenCategory, isBarCategory } = useDeviceSync();
+     const printBillRemote = () =>
+         printBill({
+             title: activeTable ? "Table Bill" : "Receipt",
+@@ -118,6 +118,7 @@ export default function TerminalPointOfSale() {
+             subtotal: item.subtotal,
+             metadata: item.metadata,
+             is_kitchen: !!item.is_kitchen,
++            is_bar: !!item.is_bar,
+             placed: item.placed,
+         }));
+         setCart(cartItems);
+@@ -172,6 +173,9 @@ export default function TerminalPointOfSale() {
+             c.products?.some((p) => p.id === product.id),
+         );
+         const isKitchenItem = isKitchenCategory(owner);
++        // Bar items also print a slip on the bar device (unless the person
++        // ringing them up is working in the bar).
++        const isBarItem = isBarCategory(owner);
+ 
+         setCart((currentCart) => {
+             const uniqueId = Date.now();
+@@ -194,6 +198,7 @@ export default function TerminalPointOfSale() {
+                     subtotal: parseFloat(price) * quantity,
+                     metadata,
+                     is_kitchen: isKitchenItem,
++                    is_bar: isBarItem,
+                     placed: 0,
+                     orderable_id: null,
+                     orderable_type: null,
+diff --git a/resources/js/Components/Stock/CategoryManager.jsx b/resources/js/Components/Stock/CategoryManager.jsx
+index 294ff12..e1d2f84 100644
+--- a/resources/js/Components/Stock/CategoryManager.jsx
++++ b/resources/js/Components/Stock/CategoryManager.jsx
+@@ -27,6 +27,7 @@ export default function CategoryManager({ open, onClose }) {
+     const [creating, setCreating] = useState(false);
+     const [createError, setCreateError] = useState(null);
+     const [newKitchen, setNewKitchen] = useState(false);
++    const [newBar, setNewBar] = useState(false);
+     const [togglingId, setTogglingId] = useState(null);
+ 
+     const [editingId, setEditingId] = useState(null);
+@@ -64,10 +65,12 @@ export default function CategoryManager({ open, onClose }) {
+                 name,
+                 slug: slugify(name),
+                 is_kitchen: newKitchen,
++                is_bar: newBar,
+             });
+             await db.categories.put(res.data);
+             setNewName("");
+             setNewKitchen(false);
++            setNewBar(false);
+             toast.success(`"${res.data.name}" added.`);
+         } catch (err) {
+             const message =
+@@ -117,10 +120,16 @@ export default function CategoryManager({ open, onClose }) {
+         }
+     };
+ 
+-    // Switch a category between "kitchen" and "bar / counter". Items in a
+-    // kitchen category are sent to the kitchen printer when an order is placed.
+-    const toggleKitchen = async (cat) => {
+-        setTogglingId(cat.id);
++    // Switch a category's station on or off. Items in a kitchen category print
++    // on the kitchen printer, and items in a bar category print a slip on the
++    // bar printer, when an order is placed. A category can be neither.
++    const STATIONS = {
++        is_kitchen: { label: "Kitchen", on: "now prints in the kitchen", off: "no longer prints in the kitchen" },
++        is_bar: { label: "Bar", on: "now prints a bar slip", off: "no longer prints a bar slip" },
++    };
++
++    const toggleStation = async (cat, field) => {
++        setTogglingId(`${cat.id}:${field}`);
+         setEditError(null);
+         try {
+             const res = await axios.put(
+@@ -128,14 +137,12 @@ export default function CategoryManager({ open, onClose }) {
+                 {
+                     name: cat.name,
+                     slug: slugify(cat.name),
+-                    is_kitchen: !cat.is_kitchen,
++                    [field]: !cat[field],
+                 },
+             );
+             await db.categories.put(res.data);
+             toast.success(
+-                res.data.is_kitchen
+-                    ? `"${res.data.name}" now prints in the kitchen.`
+-                    : `"${res.data.name}" no longer prints in the kitchen.`,
++                `"${res.data.name}" ${res.data[field] ? STATIONS[field].on : STATIONS[field].off}.`,
+             );
+         } catch (err) {
+             toast.error(
+@@ -226,6 +233,22 @@ export default function CategoryManager({ open, onClose }) {
+                             </span>
+                         </span>
+                     </label>
++                    <label className="flex items-start gap-2 mt-2 text-xs text-gray-600 cursor-pointer">
++                        <input
++                            type="checkbox"
++                            checked={newBar}
++                            onChange={(e) => setNewBar(e.target.checked)}
++                            className="mt-0.5 rounded border-gray-300"
++                        />
++                        <span>
++                            Bar category
++                            <span className="block text-gray-400">
++                                A slip prints at the bar when a waiter rings these
++                                up, so nothing leaves the bar without being on the
++                                bill.
++                            </span>
++                        </span>
++                    </label>
+                     {createError && (
+                         <p className="text-red-600 text-xs mt-1.5">
+                             {createError}
+@@ -258,24 +281,29 @@ export default function CategoryManager({ open, onClose }) {
+                                         <span className="text-sm text-gray-800 truncate">
+                                             {cat.name}
+                                         </span>
+-                                        <button
+-                                            type="button"
+-                                            onClick={() => toggleKitchen(cat)}
+-                                            disabled={togglingId === cat.id}
+-                                            aria-pressed={!!cat.is_kitchen}
+-                                            title={
+-                                                cat.is_kitchen
+-                                                    ? "Prints in the kitchen. Tap to turn off."
+-                                                    : "Tap to print this category in the kitchen."
+-                                            }
+-                                            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold border disabled:opacity-50 ${
+-                                                cat.is_kitchen
+-                                                    ? "bg-orange-100 text-orange-800 border-orange-200"
+-                                                    : "bg-white text-gray-400 border-gray-200 hover:text-gray-600"
+-                                            }`}
+-                                        >
+-                                            Kitchen
+-                                        </button>
++                                        {Object.entries(STATIONS).map(([field, st]) => (
++                                            <button
++                                                key={field}
++                                                type="button"
++                                                onClick={() => toggleStation(cat, field)}
++                                                disabled={togglingId === `${cat.id}:${field}`}
++                                                aria-pressed={!!cat[field]}
++                                                title={
++                                                    cat[field]
++                                                        ? `${st.label} category. Tap to turn off.`
++                                                        : `Tap to make this a ${st.label.toLowerCase()} category.`
++                                                }
++                                                className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold border disabled:opacity-50 ${
++                                                    cat[field]
++                                                        ? field === "is_kitchen"
++                                                            ? "bg-orange-100 text-orange-800 border-orange-200"
++                                                            : "bg-sky-100 text-sky-800 border-sky-200"
++                                                        : "bg-white text-gray-400 border-gray-200 hover:text-gray-600"
++                                                }`}
++                                            >
++                                                {st.label}
++                                            </button>
++                                        ))}
+                                     </div>
+                                 )}
+ 
+diff --git a/resources/js/Sync/engine.js b/resources/js/Sync/engine.js
+index 6f3c423..036438d 100644
+--- a/resources/js/Sync/engine.js
++++ b/resources/js/Sync/engine.js
+@@ -19,6 +19,8 @@ const KEYS = {
+     canPrint: "terminal_can_print",
+     isKitchen: "terminal_is_kitchen",
+     knownKitchens: "terminal_known_kitchens",
++    isBar: "terminal_is_bar",
++    knownBars: "terminal_known_bars",
+     shopSettings: "terminal_shop_settings",
+     routeBill: "terminal_route_bill",
+     hlc: "mesh_hlc",
+@@ -67,6 +69,10 @@ export function createEngine({
+         // This device has the kitchen printer. Items in kitchen categories are
+         // sent here automatically from every device in the shop.
+         isKitchen: storage.get(KEYS.isKitchen) === "1",
++        // This device has the bar printer. When someone who is not working in
++        // the bar rings up bar items, a slip prints here so the bar knows it
++        // was rung up before anything leaves.
++        isBar: storage.get(KEYS.isBar) === "1",
+     };
+     // Where bills print. Kitchen tickets need no setting: they go to every
+     // device that says it is the kitchen.
+@@ -88,15 +94,22 @@ export function createEngine({
+     let knownKitchens = readJson(KEYS.knownKitchens, []);
+     if (!Array.isArray(knownKitchens)) knownKitchens = [];
+ 
++    // Same for bar devices.
++    let knownBars = readJson(KEYS.knownBars, []);
++    if (!Array.isArray(knownBars)) knownBars = [];
++
+     // Settings the server sends with every poll. The last value is kept so
+     // devices behave the same when the server cannot be reached.
+-    // kitchenCategoryIds is null until the server has been heard at least once.
++    // The category id lists are null until the server has been heard at least once.
+     const savedSettings = readJson(KEYS.shopSettings, {});
+     let shopSettings = {
+         autoPrintReceipts: !!savedSettings.autoPrintReceipts,
+         kitchenCategoryIds: Array.isArray(savedSettings.kitchenCategoryIds)
+             ? savedSettings.kitchenCategoryIds
+             : null,
++        barCategoryIds: Array.isArray(savedSettings.barCategoryIds)
++            ? savedSettings.barCategoryIds
++            : null,
+     };
+ 
+     const state = {
+@@ -120,7 +133,9 @@ export function createEngine({
+             name: self.name,
+             canPrint: self.canPrint,
+             isKitchen: self.isKitchen,
++            isBar: self.isBar,
+             knownKitchens,
++            knownBars,
+             shopSettings,
+             routes: { ...routes },
+             peers: state.peers,
+@@ -159,8 +174,8 @@ export function createEngine({
+     const printService = createPrintService({
+         bus,
+         deviceId,
+-        // A kitchen device accepts jobs even if it was never marked as a bill printer.
+-        getSelf: () => ({ canPrint: self.canPrint || self.isKitchen }),
++        // Kitchen and bar devices accept jobs even if they were never marked as a bill printer.
++        getSelf: () => ({ canPrint: self.canPrint || self.isKitchen || self.isBar }),
+         onJob: (job) =>
+             printHost
+                 ? printHost.enqueue(job)
+@@ -195,26 +210,39 @@ export function createEngine({
+             name: p.name,
+             canPrint: !!p.canPrint,
+             isKitchen: !!p.isKitchen,
++            isBar: !!p.isBar,
+         }));
+-        rememberKitchens(state.peers);
++        rememberStations(state.peers);
+         touch();
+     });
+ 
+-    function rememberKitchens(peers) {
+-        let next = knownKitchens.slice();
++    // Keep a list of the devices that said they were a station (kitchen or
++    // bar), dropping any that stopped being one.
++    const updateStations = (list, peers, flag) => {
++        const next = list.slice();
+         for (const p of peers) {
+             const at = next.findIndex((k) => k.id === p.id);
+-            if (p.isKitchen) {
++            if (p[flag]) {
+                 if (at === -1) next.push({ id: p.id, name: p.name });
+                 else if (next[at].name !== p.name) next[at] = { id: p.id, name: p.name };
+             } else if (at !== -1) {
+-                next.splice(at, 1); // it stopped being the kitchen
++                next.splice(at, 1);
+             }
+         }
+-        if (JSON.stringify(next) !== JSON.stringify(knownKitchens)) {
+-            knownKitchens = next;
++        return next;
++    };
++
++    function rememberStations(peers) {
++        const kitchens = updateStations(knownKitchens, peers, "isKitchen");
++        if (JSON.stringify(kitchens) !== JSON.stringify(knownKitchens)) {
++            knownKitchens = kitchens;
+             storage.set(KEYS.knownKitchens, JSON.stringify(knownKitchens));
+         }
++        const bars = updateStations(knownBars, peers, "isBar");
++        if (JSON.stringify(bars) !== JSON.stringify(knownBars)) {
++            knownBars = bars;
++            storage.set(KEYS.knownBars, JSON.stringify(knownBars));
++        }
+     }
+ 
+     function applyShopSettings(raw) {
+@@ -227,6 +255,9 @@ export function createEngine({
+             kitchenCategoryIds: Array.isArray(raw.kitchen_category_ids)
+                 ? raw.kitchen_category_ids.map(String)
+                 : shopSettings.kitchenCategoryIds,
++            barCategoryIds: Array.isArray(raw.bar_category_ids)
++                ? raw.bar_category_ids.map(String)
++                : shopSettings.barCategoryIds,
+         };
+         if (JSON.stringify(next) === JSON.stringify(shopSettings)) return;
+         shopSettings = next;
+@@ -292,6 +323,14 @@ export function createEngine({
+             touch();
+         },
+ 
++        /** This device has the bar printer. Bar slips from every device print here. */
++        setBar(flag) {
++            self.isBar = !!flag;
++            storage.set(KEYS.isBar, self.isBar ? "1" : "0");
++            mesh.announce();
++            touch();
++        },
++
+         /** kind: "bill". id: a device id, or "" for this device. */
+         setRoute(kind, id) {
+             if (kind !== "bill") return;
+@@ -321,10 +360,12 @@ export function createEngine({
+                     name: self.name,
+                     canPrint: self.canPrint,
+                     isKitchen: self.isKitchen,
++                    isBar: self.isBar,
+                     shopId,
+                 },
+                 shopSettings,
+                 knownKitchens,
++                knownBars,
+                 browser: {
+                     userAgent: g.navigator?.userAgent,
+                     secureContext: g.isSecureContext,
+diff --git a/resources/js/Sync/rtc.js b/resources/js/Sync/rtc.js
+index 2336d48..8dcc7e4 100644
+--- a/resources/js/Sync/rtc.js
++++ b/resources/js/Sync/rtc.js
+@@ -76,7 +76,7 @@ async function describePath(pc) {
+ export function createRTCMesh({
+     bus,
+     deviceId,
+-    getSelfInfo, // () => ({ name, canPrint, isKitchen, shopId })
++    getSelfInfo, // () => ({ name, canPrint, isKitchen, isBar, shopId })
+     signaling, // { poll(self) -> { peers, messages, ice_servers? }, send(msg), leave?() }
+     RTCPeerConnectionImpl = globalThis.RTCPeerConnection,
+     iceServers = [], // extra servers; the server can add more (STUN/TURN) in poll()
+@@ -141,6 +141,7 @@ export function createRTCMesh({
+             name: p.name,
+             canPrint: !!p.can_print,
+             isKitchen: !!p.is_kitchen,
++            isBar: !!p.is_bar,
+         })),
+         connections: [...conns.entries()].map(([id, c]) => ({
+             id,
+@@ -276,6 +277,7 @@ export function createRTCMesh({
+             name: self.name,
+             canPrint: !!self.canPrint,
+             isKitchen: !!self.isKitchen,
++            isBar: !!self.isBar,
+         });
+     }
+ 
+@@ -319,6 +321,7 @@ export function createRTCMesh({
+                 name: msg.name || conn.peerId.slice(0, 6),
+                 canPrint: !!msg.canPrint,
+                 isKitchen: !!msg.isKitchen,
++                isBar: !!msg.isBar,
+             });
+             conn.link = link;
+             bus.attach(conn.peerId, link);
+@@ -341,6 +344,7 @@ export function createRTCMesh({
+                 name: msg.name,
+                 canPrint: !!msg.canPrint,
+                 isKitchen: !!msg.isKitchen,
++                isBar: !!msg.isBar,
+             });
+             return;
+         }
+@@ -514,6 +518,7 @@ export function createRTCMesh({
+                 name: self.name,
+                 can_print: !!self.canPrint,
+                 is_kitchen: !!self.isKitchen,
++                is_bar: !!self.isBar,
+             });
+             if (signalingUp !== true) {
+                 note("server reachable", {}, "info");
+@@ -622,6 +627,7 @@ export function createRTCMesh({
+                         name: self.name,
+                         canPrint: !!self.canPrint,
+                         isKitchen: !!self.isKitchen,
++                        isBar: !!self.isBar,
+                     });
+                 }
+             }
+diff --git a/resources/js/Utils/db.js b/resources/js/Utils/db.js
+index 431c25d..ae28fdc 100644
+--- a/resources/js/Utils/db.js
++++ b/resources/js/Utils/db.js
+@@ -349,6 +349,7 @@ export const updateTableItemsLocal = async (tableId, newItems) => {
+                 subtotal: item.subtotal,
+                 metadata: item.metadata || { type: "unit" },
+                 is_kitchen: !!item.is_kitchen,
++                is_bar: !!item.is_bar,
+                 synced_at: null,
+             });
+         }
+diff --git a/tests/Feature/KitchenAndPrintSettingsTest.php b/tests/Feature/KitchenAndPrintSettingsTest.php
+index 1eb9d94..7cf78ee 100644
+--- a/tests/Feature/KitchenAndPrintSettingsTest.php
++++ b/tests/Feature/KitchenAndPrintSettingsTest.php
+@@ -234,4 +234,87 @@ public function test_the_kitchen_device_is_flagged_for_the_other_devices(): void
+ 
+         $res->assertJsonPath('peers.0.device_id', $kitchen)->assertJsonPath('peers.0.is_kitchen', true);
+     }
++
++    // ------------------------------------------------------------ bar categories
++
++    public function test_a_category_can_be_a_bar_category_and_it_is_not_one_unless_asked(): void
++    {
++        $shop = $this->shop();
++        $manager = $this->staff($shop, UserRole::MANAGER);
++
++        $this->actingAs($manager)
++            ->postJson(route('inventory.categories.store'), ['name' => 'Beers', 'is_bar' => true])
++            ->assertOk()
++            ->assertJsonPath('is_bar', true)
++            ->assertJsonPath('is_kitchen', false);
++
++        $this->actingAs($manager)
++            ->postJson(route('inventory.categories.store'), ['name' => 'Grill'])
++            ->assertOk()
++            ->assertJsonPath('is_bar', false);
++    }
++
++    public function test_a_manager_can_switch_the_bar_flag_without_touching_the_kitchen_flag(): void
++    {
++        $shop = $this->shop();
++        $manager = $this->staff($shop, UserRole::SHOP_MANAGER);
++        $category = Category::create(['shop_id' => $shop->id, 'name' => 'Wings', 'slug' => 'wings', 'is_kitchen' => true]);
++
++        $this->actingAs($manager)
++            ->putJson(route('inventory.categories.update', $category), ['name' => 'Wings', 'is_bar' => true])
++            ->assertOk()
++            ->assertJsonPath('is_bar', true)
++            ->assertJsonPath('is_kitchen', true);
++
++        $this->actingAs($manager)
++            ->putJson(route('inventory.categories.update', $category), ['name' => 'Wings', 'is_bar' => false])
++            ->assertOk()
++            ->assertJsonPath('is_bar', false)
++            ->assertJsonPath('is_kitchen', true);
++    }
++
++    public function test_the_catalog_sync_and_the_device_poll_both_carry_the_bar_categories(): void
++    {
++        $shop = $this->shop();
++        $beers = Category::create(['shop_id' => $shop->id, 'name' => 'Beers', 'slug' => 'beers', 'is_bar' => true]);
++        Category::create(['shop_id' => $shop->id, 'name' => 'Grill', 'slug' => 'grill', 'is_kitchen' => true]);
++        $cashier = $this->staff($shop, UserRole::CASHIER);
++
++        $menu = collect($this->actingAs($cashier)->getJson('/inventory/sync-catalog')->assertOk()->json('menu'))->keyBy('name');
++        $this->assertTrue($menu['Beers']['is_bar']);
++        $this->assertFalse($menu['Grill']['is_bar']);
++
++        $res = $this->poll($cashier, (string) Str::uuid())->assertOk();
++        $this->assertSame([$beers->id], $res->json('shop_settings.bar_category_ids'));
++    }
++
++    public function test_the_bar_device_is_flagged_for_the_other_devices(): void
++    {
++        $shop = $this->shop();
++        $bar = (string) Str::uuid();
++        $other = (string) Str::uuid();
++
++        $this->poll($this->staff($shop, UserRole::BARTENDER), $bar, ['name' => 'Main bar', 'is_bar' => true]);
++        $res = $this->poll($this->staff($shop, UserRole::WAITER), $other);
++
++        $res->assertJsonPath('peers.0.device_id', $bar)
++            ->assertJsonPath('peers.0.is_bar', true)
++            ->assertJsonPath('peers.0.is_kitchen', false);
++    }
++
++    public function test_changing_a_bar_category_reaches_devices_on_their_next_poll(): void
++    {
++        $shop = $this->shop();
++        $manager = $this->staff($shop, UserRole::MANAGER);
++        $device = (string) Str::uuid();
++        $category = Category::create(['shop_id' => $shop->id, 'name' => 'Beers', 'slug' => 'beers']);
++
++        $this->assertSame([], $this->poll($manager, $device)->json('shop_settings.bar_category_ids'));
++
++        $this->actingAs($manager)
++            ->putJson(route('inventory.categories.update', $category), ['name' => 'Beers', 'is_bar' => true])
++            ->assertOk();
++
++        $this->assertSame([$category->id], $this->poll($manager, $device)->json('shop_settings.bar_category_ids'));
++    }
+ }
+diff --git a/tests/js/README.md b/tests/js/README.md
+index 6a78dfc..3e87976 100644
+--- a/tests/js/README.md
++++ b/tests/js/README.md
+@@ -25,5 +25,6 @@ # JavaScript tests for the device mesh
+ - `sync/updateTable.test.js` regression test for adding items to an open table
+ - `sync/orderNo.test.js` order numbers for kitchen tickets
+ - `ui/devices.test.jsx` provider, panel states and hints, printing through the host
++- `ui/bar.test.jsx` bar slips: the bar device, who triggers a slip (waiter, cashier, bartender, managers on the floor or in the bar), and Fast Sale, Open Table and Update Table end to end
+ - `ui/kitchen.test.jsx` kitchen categories, the kitchen device, automatic receipts, the manager
+   setting, and Fast Sale, Open Table, Update Table and Close Table end to end
+diff --git a/tests/js/sync/engine.test.js b/tests/js/sync/engine.test.js
+index 88b9f9d..8bc45a5 100644
+--- a/tests/js/sync/engine.test.js
++++ b/tests/js/sync/engine.test.js
+@@ -27,6 +27,7 @@ function signalServer() {
+                 name: self.name,
+                 can_print: self.can_print,
+                 is_kitchen: self.is_kitchen,
++                is_bar: self.is_bar,
+             });
+             if (!mail.has(deviceId)) mail.set(deviceId, []);
+             const res = {
+@@ -258,7 +259,7 @@ describe("engine", () => {
+         const stored = { terminal_shop_settings: JSON.stringify({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"] }), terminal_known_kitchens: JSON.stringify([{ id: "k", name: "Pass" }]) };
+         const a = mk("aaaa1111-0000-4000-8000-000000000001", server, stored);
+         const snap = a.engine.getSnapshot();
+-        expect(snap.shopSettings).toEqual({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"] });
++        expect(snap.shopSettings).toEqual({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"], barCategoryIds: null });
+         expect(snap.knownKitchens).toEqual([{ id: "k", name: "Pass" }]);
+     });
+ 
+@@ -270,4 +271,67 @@ describe("engine", () => {
+         a.engine.setRoute("bill", "dev-1");
+         expect(a.engine.getSnapshot().routes.bill).toBe("dev-1");
+     });
++
++    it("the bar flag reaches the other device over the real link, is remembered, and is forgotten when switched off", async () => {
++        const server = signalServer();
++        const waiter = mk("aaaa1111-0000-4000-8000-000000000001", server);
++        const bar = mk("bbbb2222-0000-4000-8000-000000000002", server);
++        await waitFor(() => waiter.engine.getSnapshot().peers.length === 1, 12_000, "linked");
++        expect(waiter.engine.getSnapshot().peers[0].isBar).toBe(false);
++
++        bar.engine.setName("Main bar");
++        bar.engine.setBar(true);
++        await waitFor(() => waiter.engine.getSnapshot().peers[0]?.isBar === true, 6000, "waiter sees the bar");
++        expect(waiter.engine.getSnapshot().peers[0].isKitchen).toBe(false);
++        expect(waiter.engine.getSnapshot().knownBars).toEqual([{ id: "bbbb2222-0000-4000-8000-000000000002", name: "Main bar" }]);
++        expect(waiter.engine.getSnapshot().knownKitchens).toEqual([]);
++
++        bar.engine.setBar(false);
++        await waitFor(() => waiter.engine.getSnapshot().knownBars.length === 0, 6000, "forgotten");
++    }, 40_000);
++
++    it("a device can be the kitchen and the bar at once, and each list is kept separately", async () => {
++        const server = signalServer();
++        const a = mk("aaaa1111-0000-4000-8000-000000000001", server);
++        const both = mk("bbbb2222-0000-4000-8000-000000000002", server);
++        await waitFor(() => a.engine.getSnapshot().peers.length === 1, 12_000, "linked");
++        both.engine.setKitchen(true);
++        both.engine.setBar(true);
++        await waitFor(() => a.engine.getSnapshot().knownBars.length === 1 && a.engine.getSnapshot().knownKitchens.length === 1, 6000, "both known");
++        both.engine.setKitchen(false);
++        await waitFor(() => a.engine.getSnapshot().knownKitchens.length === 0, 6000, "kitchen dropped");
++        expect(a.engine.getSnapshot().knownBars.length).toBe(1);
++    }, 30_000);
++
++    it("a bar device takes print jobs even though it was never marked as a bill printer", async () => {
++        const server = signalServer();
++        const waiter = mk("aaaa1111-0000-4000-8000-000000000001", server);
++        const bar = mk("bbbb2222-0000-4000-8000-000000000002", server);
++        const printed = [];
++        bar.engine.setPrintHost({ enqueue: async (job) => printed.push(job) });
++        bar.engine.setBar(true); // canPrint stays false
++        await waitFor(() => waiter.engine.getSnapshot().peers[0]?.isBar === true, 12_000, "bar seen");
++        expect(waiter.engine.getSnapshot().peers[0].canPrint).toBe(false);
++        await waiter.engine.sendPrint(bar.id, { template: "bar", props: { tableName: "T4" } });
++        expect(printed.length).toBe(1);
++    }, 30_000);
++
++    it("applies the bar category list from the server with the other settings", async () => {
++        const server = signalServer();
++        server.settings = { auto_print_receipts: false, kitchen_category_ids: ["k1"], bar_category_ids: [3, "b2"] };
++        const a = mk("aaaa1111-0000-4000-8000-000000000001", server);
++        await waitFor(() => a.engine.getSnapshot().shopSettings.barCategoryIds?.length === 2, 6000, "applied");
++        expect(a.engine.getSnapshot().shopSettings.barCategoryIds).toEqual(["3", "b2"]);
++        expect(a.engine.getSnapshot().shopSettings.kitchenCategoryIds).toEqual(["k1"]);
++    }, 20_000);
++
++    it("restores the bar flag and known bars after a reload", async () => {
++        const server = signalServer();
++        const a = mk("aaaa1111-0000-4000-8000-000000000001", server, {
++            terminal_is_bar: "1",
++            terminal_known_bars: JSON.stringify([{ id: "b", name: "Cellar" }]),
++        });
++        expect(a.engine.getSnapshot().isBar).toBe(true);
++        expect(a.engine.getSnapshot().knownBars).toEqual([{ id: "b", name: "Cellar" }]);
++    });
+ });
+diff --git a/tests/js/ui/bar.test.jsx b/tests/js/ui/bar.test.jsx
+new file mode 100644
+index 0000000..fcc76e0
+--- /dev/null
++++ b/tests/js/ui/bar.test.jsx
+@@ -0,0 +1,325 @@
++// Bar slips: a slip prints on the bar device when someone who is not working
++// in the bar rings up bar items.
++
++import "fake-indexeddb/auto";
++import React from "react";
++import { render, screen, fireEvent, waitFor, act, cleanup } from "@testing-library/react";
++import { __state } from "@inertiajs/react";
++import { calls as toastCalls } from "react-hot-toast";
++import { printed } from "react-to-print";
++import DeviceSyncProvider, { useDeviceSync } from "@/Components/Devices/DeviceSyncProvider";
++import CheckoutOrderButton from "@/Components/Sales/CheckoutOrderButton";
++import CheckoutTableButton from "@/Components/Sales/CheckoutTableButton";
++import TicketCart from "@/Components/Sales/Partials/TicketCart";
++import { db, saveTableLocal, saveOrderItemLocal } from "@/Utils/db";
++import { stopEngine } from "@/Sync/engine";
++
++let ctx = null;
++const Probe = () => {
++    ctx = useDeviceSync();
++    return null;
++};
++
++const user = (over = {}) => ({ id: "u1", name: "Tendai", shop_id: "shop-1", role: "waiter", ...over });
++
++let serverSettings;
++const mockServer = () => {
++    globalThis.fetch = vi.fn(async (url) => {
++        if (url === "/devices/poll") {
++            return { ok: true, status: 200, json: async () => ({ peers: [], messages: [], shop_settings: serverSettings }) };
++        }
++        return { ok: true, status: 200, json: async () => ({}) };
++    });
++};
++
++const barItem = (over = {}) => ({
++    cartItemId: crypto.randomUUID(), product_id: "p-castle", name: "Castle Lager", quantity: 2,
++    unit_price: 2.6, subtotal: 5.2, metadata: { type: "unit" }, is_kitchen: false, is_bar: true, placed: 0, ...over,
++});
++const foodItem = (over = {}) => ({
++    cartItemId: crypto.randomUUID(), product_id: "p-chips", name: "Chips", quantity: 1,
++    unit_price: 2, subtotal: 2, metadata: { type: "unit" }, is_kitchen: true, is_bar: false, placed: 0, ...over,
++});
++const otherItem = (over = {}) => ({
++    cartItemId: crypto.randomUUID(), product_id: "p-airtime", name: "Airtime", quantity: 1,
++    unit_price: 1, subtotal: 1, metadata: { type: "unit" }, is_kitchen: false, is_bar: false, placed: 0, ...over,
++});
++
++beforeEach(async () => {
++    localStorage.clear();
++    toastCalls.length = 0;
++    printed.length = 0;
++    ctx = null;
++    serverSettings = { auto_print_receipts: false, kitchen_category_ids: [], bar_category_ids: [] };
++    __state.props = { auth: { user: user() } };
++    globalThis.RTCPeerConnection = class {};
++    mockServer();
++    await Promise.all([db.orders.clear(), db.open_tables.clear(), db.order_items.clear()]);
++});
++afterEach(() => {
++    cleanup();
++    stopEngine();
++    delete globalThis.RTCPeerConnection;
++});
++
++const mount = (extra = null) =>
++    render(
++        <DeviceSyncProvider>
++            <Probe />
++            {extra}
++        </DeviceSyncProvider>,
++    );
++
++const asBarDevice = async () => {
++    act(() => ctx.setBar(true));
++    await waitFor(() => expect(ctx.isBar).toBe(true));
++};
++
++describe("the bar device", () => {
++    it("the toggle is saved, shown, and does not make it a bill printer or the kitchen", async () => {
++        mount();
++        fireEvent.click(screen.getByLabelText("Devices in this shop"));
++        fireEvent.click(screen.getByLabelText("This is the bar device"));
++        await waitFor(() => expect(ctx.isBar).toBe(true));
++        expect(localStorage.getItem("terminal_is_bar")).toBe("1");
++        expect(screen.getByText(/a slip prints here so nothing/)).toBeTruthy();
++        expect(ctx.canPrint).toBe(false);
++        expect(ctx.isKitchen).toBe(false);
++        expect(ctx.printers).toEqual([]);
++    });
++
++    it("a waiter's bar items print a slip with the table name and the waiter's name, and nothing else", async () => {
++        mount();
++        await asBarDevice();
++        // a kitchen item and a non-station item are in the same order
++        expect(ctx.printBarSlip({ tableName: "Window seat", items: [barItem(), foodItem(), otherItem()], isUpdate: true })).toBe(true);
++        await waitFor(() => expect(printed.length).toBe(1));
++        const html = printed[0].html;
++        expect(printed[0].title).toBe("Bar Window seat");
++        expect(html).toContain("BAR");
++        expect(html).toContain("Window seat");
++        expect(html).toContain("ADD TO TABLE");
++        expect(html).toContain("Tendai");
++        expect(html).toContain("Castle Lager");
++        expect(html).toContain("2x");
++        expect(html).not.toContain("Chips");
++        expect(html).not.toContain("Airtime");
++        expect(html).not.toMatch(/\$\d/);
++    });
++
++    it("a fast sale prints the order number", async () => {
++        mount();
++        await asBarDevice();
++        ctx.printBarSlip({ orderNo: 7, items: [barItem()] });
++        await waitFor(() => expect(printed.length).toBe(1));
++        expect(printed[0].html).toContain("#7");
++        expect(printed[0].html).toContain("ORDER");
++        expect(printed[0].html).toContain("NEW ORDER");
++    });
++
++    it("prints nothing when no item in the order is a bar item", async () => {
++        mount();
++        await asBarDevice();
++        expect(ctx.printBarSlip({ tableName: "T1", items: [foodItem(), otherItem()] })).toBe(false);
++        await new Promise((r) => setTimeout(r, 120));
++        expect(printed.length).toBe(0);
++        expect(toastCalls.length).toBe(0);
++    });
++
++    it("warns loudly when no bar device is linked, naming a bar seen before", async () => {
++        mount();
++        await waitFor(() => expect(ctx).not.toBeNull());
++        expect(ctx.printBarSlip({ tableName: "T1", items: [barItem()] })).toBe(false);
++        expect(toastCalls.some((c) => c.kind === "error" && /No bar device is linked. Bar slip NOT printed/.test(c.msg))).toBe(true);
++        cleanup(); stopEngine(); toastCalls.length = 0;
++
++        localStorage.setItem("terminal_known_bars", JSON.stringify([{ id: "b1", name: "Main bar" }]));
++        mount();
++        await waitFor(() => expect(ctx).not.toBeNull());
++        ctx.printBarSlip({ tableName: "T1", items: [barItem()] });
++        expect(toastCalls.some((c) => c.kind === "error" && /Main bar is offline. Bar slip NOT printed/.test(c.msg))).toBe(true);
++    });
++});
++
++describe("who triggers a bar slip", () => {
++    const rings = async (role, { inBar = false } = {}) => {
++        __state.props = { auth: { user: user({ role }) } };
++        mount();
++        await asBarDevice(); // this device is also the bar, so a slip would print right here
++        if (inBar) {
++            fireEvent.click(screen.getByLabelText("Devices in this shop"));
++            fireEvent.click(screen.getByText("In the bar"));
++            await waitFor(() => expect(ctx.inBar).toBe(true));
++        }
++        const sent = ctx.printBarSlip({ tableName: "T1", items: [barItem()] });
++        await new Promise((r) => setTimeout(r, 150));
++        return { sent, printedCount: printed.length };
++    };
++
++    it.each(["waiter", "cashier", "staff"])("a %s triggers a slip", async (role) => {
++        const r = await rings(role);
++        expect(r).toEqual({ sent: true, printedCount: 1 });
++    });
++
++    it("a bartender never does", async () => {
++        const r = await rings("bartender");
++        expect(r).toEqual({ sent: false, printedCount: 0 });
++        expect(toastCalls.some((c) => c.kind === "error")).toBe(false);
++    });
++
++    it.each(["manager", "shop_manager"])("a %s on the floor does", async (role) => {
++        const r = await rings(role);
++        expect(r).toEqual({ sent: true, printedCount: 1 });
++    });
++
++    it.each(["manager", "shop_manager"])("a %s working in the bar does not", async (role) => {
++        const r = await rings(role, { inBar: true });
++        expect(r).toEqual({ sent: false, printedCount: 0 });
++    });
++
++    it("only managers see the floor / bar switch", async () => {
++        for (const role of ["waiter", "cashier", "bartender"]) {
++            __state.props = { auth: { user: user({ role }) } };
++            const { unmount } = mount();
++            fireEvent.click(screen.getByLabelText("Devices in this shop"));
++            expect(screen.queryByText("Where are you working?")).toBeNull();
++            unmount();
++            stopEngine();
++        }
++        __state.props = { auth: { user: user({ role: "manager" }) } };
++        mount();
++        fireEvent.click(screen.getByLabelText("Devices in this shop"));
++        expect(screen.getByText("Where are you working?")).toBeTruthy();
++    });
++
++    it("a manager's choice is remembered for that manager on this device, and is theirs alone", async () => {
++        __state.props = { auth: { user: user({ id: "m1", role: "manager" }) } };
++        mount();
++        fireEvent.click(screen.getByLabelText("Devices in this shop"));
++        fireEvent.click(screen.getByText("In the bar"));
++        await waitFor(() => expect(ctx.inBar).toBe(true));
++        expect(localStorage.getItem("terminal_in_bar:m1")).toBe("1");
++        cleanup(); stopEngine();
++
++        // the same manager comes back: still in the bar
++        mount();
++        expect(ctx.inBar).toBe(true);
++        cleanup(); stopEngine();
++
++        // a different manager on the same device starts on the floor
++        __state.props = { auth: { user: user({ id: "m2", role: "shop_manager" }) } };
++        mount();
++        expect(ctx.inBar).toBe(false);
++    });
++});
++
++describe("bar categories", () => {
++    it("uses the live list from the server once known, and the catalog flag only until then", async () => {
++        let release;
++        const gate = new Promise((r) => (release = r));
++        globalThis.fetch = vi.fn(async (url) => {
++            if (url === "/devices/poll") {
++                await gate;
++                return { ok: true, status: 200, json: async () => ({ peers: [], messages: [], shop_settings: serverSettings }) };
++            }
++            return { ok: true, status: 200, json: async () => ({}) };
++        });
++        mount();
++        await waitFor(() => expect(ctx).not.toBeNull());
++        expect(ctx.isBarCategory({ id: "c1", is_bar: true })).toBe(true);
++        expect(ctx.isBarCategory({ id: "c2", is_bar: false })).toBe(false);
++        expect(ctx.isBarCategory(undefined)).toBe(false);
++
++        serverSettings = { auto_print_receipts: false, kitchen_category_ids: [], bar_category_ids: ["c2"] };
++        release();
++        await waitFor(() => expect(ctx.shopSettings.barCategoryIds).toEqual(["c2"]));
++        expect(ctx.isBarCategory({ id: "c1", is_bar: true })).toBe(false);
++        expect(ctx.isBarCategory({ id: "c2", is_bar: false })).toBe(true);
++        expect(JSON.parse(localStorage.getItem("terminal_shop_settings")).barCategoryIds).toEqual(["c2"]);
++    });
++});
++
++// ------------------------------- end to end through the real checkout buttons
++describe("Fast Sale, Open Table and Update Table", () => {
++    beforeEach(() => localStorage.setItem("terminal_shift_id", "shift-1"));
++
++    it("a waiter's Fast Sale sends the kitchen items to the kitchen and the bar items to the bar", async () => {
++        localStorage.setItem("terminal_is_kitchen", "1");
++        localStorage.setItem("terminal_is_bar", "1");
++        const onClear = vi.fn();
++        const cart = [barItem(), foodItem(), otherItem()];
++        mount(<CheckoutOrderButton cart={cart} auth={{ user: user() }} onClearCart={onClear} cartTotal={8.2} />);
++        fireEvent.click(screen.getByText(/^Fast Sale/));
++        fireEvent.click(await screen.findByText("Save Sale"));
++        await waitFor(() => expect(onClear).toHaveBeenCalled());
++        await waitFor(() => expect(printed.length).toBe(2));
++
++        const kitchen = printed.find((p) => p.title.startsWith("Kitchen"));
++        const bar = printed.find((p) => p.title.startsWith("Bar"));
++        expect(kitchen.html).toContain("Chips");
++        expect(kitchen.html).not.toContain("Castle");
++        expect(bar.html).toContain("Castle Lager");
++        expect(bar.html).toContain("#1");
++        expect(bar.html).toContain("Tendai");
++        expect(bar.html).not.toContain("Chips");
++        expect(bar.html).not.toContain("Airtime");
++
++        const items = await db.order_items.toArray();
++        expect(items.find((i) => i.name === "Castle Lager").is_bar).toBe(true);
++        expect(items.find((i) => i.name === "Chips").is_bar).toBe(false);
++    });
++
++    it("a bartender's own Fast Sale prints no bar slip, and the sale is unaffected", async () => {
++        __state.props = { auth: { user: user({ role: "bartender" }) } };
++        localStorage.setItem("terminal_is_bar", "1");
++        const onClear = vi.fn();
++        mount(<CheckoutOrderButton cart={[barItem()]} auth={{ user: user({ role: "bartender" }) }} onClearCart={onClear} cartTotal={5.2} />);
++        fireEvent.click(screen.getByText(/^Fast Sale/));
++        fireEvent.click(await screen.findByText("Save Sale"));
++        await waitFor(() => expect(onClear).toHaveBeenCalled());
++        await new Promise((r) => setTimeout(r, 150));
++        expect(printed.length).toBe(0);
++        expect((await db.orders.toArray()).length).toBe(1);
++        expect(toastCalls.some((c) => c.kind === "error")).toBe(false);
++    });
++
++    it("a sale is still saved when there is no bar device, and a waiter is warned", async () => {
++        const onClear = vi.fn();
++        mount(<CheckoutOrderButton cart={[barItem()]} auth={{ user: user() }} onClearCart={onClear} cartTotal={5.2} />);
++        fireEvent.click(screen.getByText(/^Fast Sale/));
++        fireEvent.click(await screen.findByText("Save Sale"));
++        await waitFor(() => expect(onClear).toHaveBeenCalled());
++        expect((await db.orders.toArray()).length).toBe(1);
++        expect(toastCalls.some((c) => c.kind === "error" && /Bar slip NOT printed/.test(c.msg))).toBe(true);
++    });
++
++    it("Open Table sends the bar items under the table name", async () => {
++        localStorage.setItem("terminal_is_bar", "1");
++        const onClear = vi.fn();
++        mount(<CheckoutTableButton cart={[barItem(), foodItem()]} auth={{ user: user() }} onClearCart={onClear} />);
++        fireEvent.click(screen.getByText("Open Table"));
++        fireEvent.change(await screen.findByPlaceholderText(/Table 5/), { target: { value: "Patio 2" } });
++        fireEvent.click(screen.getByText("Confirm"));
++        await waitFor(() => expect(onClear).toHaveBeenCalled());
++        await waitFor(() => expect(printed.length).toBe(1));
++        expect(printed[0].title).toBe("Bar Patio 2");
++        expect(printed[0].html).toContain("TABLE");
++        expect(printed[0].html).toContain("Castle Lager");
++        expect(printed[0].html).not.toContain("Chips");
++    });
++
++    it("Update Table sends only the NEW bar items", async () => {
++        localStorage.setItem("terminal_is_bar", "1");
++        const table = { id: "table-1", shop_id: "shop-1", shift_id: "shift-1", user_id: "u1", name: "Patio 2", total_amount: 5.2, status: "open", created_at: new Date().toISOString() };
++        await saveTableLocal(table);
++        await saveOrderItemLocal({ id: "old", orderable_id: table.id, product_id: "p-castle", name: "Castle Lager", quantity: 2, unit_price: 2.6, subtotal: 5.2, is_bar: true });
++        const earlier = barItem({ placed: 1 });
++        const another = barItem({ name: "Black Label", product_id: "p-bl", quantity: 1, subtotal: 2.8, unit_price: 2.8 });
++        mount(<TicketCart cart={[earlier, another]} auth={{ user: user() }} setCart={vi.fn()} activeTable={table} setActiveTable={vi.fn()} onPrint={() => {}} />);
++        fireEvent.click(screen.getByText("Update Table"));
++        await waitFor(() => expect(printed.length).toBe(1));
++        expect(printed[0].html).toContain("Black Label");
++        expect(printed[0].html).not.toContain("Castle");
++        expect(printed[0].html).toContain("ADD TO TABLE");
++    });
++});
+diff --git a/tests/js/ui/kitchen.test.jsx b/tests/js/ui/kitchen.test.jsx
+index 54c33b6..f57bfa3 100644
+--- a/tests/js/ui/kitchen.test.jsx
++++ b/tests/js/ui/kitchen.test.jsx
+@@ -216,7 +216,7 @@ describe("kitchen categories", () => {
+         globalThis.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
+         mount();
+         await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+-        expect(ctx.shopSettings).toEqual({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"] });
++        expect(ctx.shopSettings).toEqual({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"], barCategoryIds: null });
+         expect(ctx.isKitchenCategory({ id: "c9" })).toBe(true);
+     });
+ });

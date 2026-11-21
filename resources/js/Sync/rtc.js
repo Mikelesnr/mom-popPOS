@@ -76,7 +76,7 @@ async function describePath(pc) {
 export function createRTCMesh({
     bus,
     deviceId,
-    getSelfInfo, // () => ({ name, canPrint, isKitchen, shopId })
+    getSelfInfo, // () => ({ name, canPrint, isKitchen, isBar, shopId })
     signaling, // { poll(self) -> { peers, messages, ice_servers? }, send(msg), leave?() }
     RTCPeerConnectionImpl = globalThis.RTCPeerConnection,
     iceServers = [], // extra servers; the server can add more (STUN/TURN) in poll()
@@ -141,6 +141,7 @@ export function createRTCMesh({
             name: p.name,
             canPrint: !!p.can_print,
             isKitchen: !!p.is_kitchen,
+            isBar: !!p.is_bar,
         })),
         connections: [...conns.entries()].map(([id, c]) => ({
             id,
@@ -276,6 +277,7 @@ export function createRTCMesh({
             name: self.name,
             canPrint: !!self.canPrint,
             isKitchen: !!self.isKitchen,
+            isBar: !!self.isBar,
         });
     }
 
@@ -319,6 +321,7 @@ export function createRTCMesh({
                 name: msg.name || conn.peerId.slice(0, 6),
                 canPrint: !!msg.canPrint,
                 isKitchen: !!msg.isKitchen,
+                isBar: !!msg.isBar,
             });
             conn.link = link;
             bus.attach(conn.peerId, link);
@@ -341,6 +344,7 @@ export function createRTCMesh({
                 name: msg.name,
                 canPrint: !!msg.canPrint,
                 isKitchen: !!msg.isKitchen,
+                isBar: !!msg.isBar,
             });
             return;
         }
@@ -514,6 +518,7 @@ export function createRTCMesh({
                 name: self.name,
                 can_print: !!self.canPrint,
                 is_kitchen: !!self.isKitchen,
+                is_bar: !!self.isBar,
             });
             if (signalingUp !== true) {
                 note("server reachable", {}, "info");
@@ -622,6 +627,7 @@ export function createRTCMesh({
                         name: self.name,
                         canPrint: !!self.canPrint,
                         isKitchen: !!self.isKitchen,
+                        isBar: !!self.isBar,
                     });
                 }
             }

@@ -49,6 +49,31 @@ bar and kitchen items together. Kitchen tickets are an addition:
   need anyone to press Sync. The flag that comes with the catalog is only used
   until the server has been heard once.
 
+## Bar slips
+
+Bar slips stop drinks leaving the bar without being rung up. When a waiter (or
+anyone not working in the bar) rings up bar items, a slip prints on the bar
+printer, so the bartender only hands out what is on a slip.
+
+- Mark categories as **Bar** in the category manager, the same way as kitchen
+  categories. A category can be kitchen, bar, both, or neither.
+- On the device with the bar printer, tick "This is the bar device". Like the
+  kitchen device, it does not become a bill printer.
+- The slip is sent when an order is placed (Fast Sale), a table is opened, or
+  items are added to a table. It carries only the bar items, with the staff
+  name, the table name or order number, the time and the quantities. No prices.
+- **Who does not trigger a slip:** bartenders never do. Managers and shop
+  managers have a "Where are you working?" switch in the Shop devices panel:
+  while set to "In the bar" their orders print no slip, and set back to "On the
+  floor" they do, like a waiter. The choice is remembered for that person on that
+  device and starts on "On the floor".
+- If there is no bar device linked, the sale is still saved and the waiter sees
+  "Bar slip NOT printed" (naming the bar if it was seen before). There is no
+  fallback to another printer.
+- The bar categories reach every device within seconds, with the regular poll,
+  the same as kitchen categories.
+- Run `php artisan migrate` (adds `categories.is_bar`, off by default).
+
 ### Automatic receipts (managers)
 
 By default nothing changes: receipts print when someone taps Print. A manager,

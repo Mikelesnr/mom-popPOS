@@ -157,6 +157,56 @@ export default function DeviceStatusPill() {
                             they are rung.
                         </p>
                     )}
+                    <label className="flex min-h-[44px] items-center gap-3 text-sm text-stone-700">
+                        <input
+                            type="checkbox"
+                            checked={sync.isBar}
+                            onChange={(e) => sync.setBar(e.target.checked)}
+                            className="h-5 w-5 rounded border-stone-300 text-[#14352E] focus:ring-[#14352E]"
+                        />
+                        This is the bar device
+                    </label>
+                    {sync.isBar && (
+                        <p className="mb-1 text-xs text-stone-500">
+                            When a waiter rings up bar items, a slip prints here so nothing
+                            leaves the bar without being on the bill. Slips are not printed
+                            for bartenders, or for managers working in the bar.
+                        </p>
+                    )}
+
+                    {/* Managers can say where they are working right now */}
+                    {sync.canSwitchPosition && (
+                        <div className="mt-2">
+                            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-stone-500">
+                                Where are you working?
+                            </p>
+                            <div className="grid grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1">
+                                {[
+                                    { value: false, label: "On the floor" },
+                                    { value: true, label: "In the bar" },
+                                ].map((o) => (
+                                    <button
+                                        key={o.label}
+                                        type="button"
+                                        onClick={() => sync.setWorkingInBar(o.value)}
+                                        aria-pressed={sync.inBar === o.value}
+                                        className={`min-h-[44px] rounded-lg text-sm font-semibold ${
+                                            sync.inBar === o.value
+                                                ? "bg-[#14352E] text-white shadow"
+                                                : "text-stone-600 hover:bg-stone-200"
+                                        }`}
+                                    >
+                                        {o.label}
+                                    </button>
+                                ))}
+                            </div>
+                            <p className="mt-1 text-xs text-stone-500">
+                                {sync.inBar
+                                    ? "Your orders do not print bar slips while you work in the bar."
+                                    : "Your bar orders print a slip on the bar device, like a waiter's."}
+                            </p>
+                        </div>
+                    )}
 
                     {/* Other devices */}
                     <div className="mt-4 border-t border-stone-100 pt-3">
@@ -173,6 +223,11 @@ export default function DeviceStatusPill() {
                                                 {p.isKitchen && (
                                                     <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-semibold text-orange-800">
                                                         Kitchen
+                                                    </span>
+                                                )}
+                                                {p.isBar && (
+                                                    <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800">
+                                                        Bar
                                                     </span>
                                                 )}
                                                 {p.canPrint && (

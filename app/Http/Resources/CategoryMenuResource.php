@@ -17,6 +17,7 @@ class CategoryMenuResource extends JsonResource
             'name' => $this->name,
             'slug' => $this->slug,
             'is_kitchen' => (bool) $this->is_kitchen,
+            'is_bar' => (bool) $this->is_bar,
             'products' => ProductMenuResource::collection($this->products),
         ];
     }

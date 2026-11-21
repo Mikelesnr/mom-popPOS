@@ -16,7 +16,7 @@ export default function TicketCart({
     onPrint,
 }) {
     const [activePaymentContext, setActivePaymentContext] = useState(null);
-    const { printKitchenTicket, autoPrintReceipt } = useDeviceSync();
+    const { printKitchenTicket, printBarSlip, autoPrintReceipt } = useDeviceSync();
 
     const cartTotal = cart.reduce(
         (sum, item) => sum + (parseFloat(item.subtotal) || 0),
@@ -63,6 +63,11 @@ export default function TicketCart({
             // kitchen device. Never blocks updating the table.
             try {
                 printKitchenTicket({
+                    tableName: activeTable.name,
+                    items: newItems,
+                    isUpdate: true,
+                });
+                printBarSlip({
                     tableName: activeTable.name,
                     items: newItems,
                     isUpdate: true,
