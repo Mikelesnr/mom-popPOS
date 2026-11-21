@@ -216,7 +216,7 @@ describe("kitchen categories", () => {
         globalThis.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
         mount();
         await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
-        expect(ctx.shopSettings).toEqual({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"] });
+        expect(ctx.shopSettings).toEqual({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"], barCategoryIds: null });
         expect(ctx.isKitchenCategory({ id: "c9" })).toBe(true);
     });
 });

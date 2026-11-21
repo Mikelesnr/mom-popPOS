@@ -7,7 +7,7 @@ import { useDeviceSync } from "@/Components/Devices/DeviceSyncProvider";
 export default function CheckoutTableButton({ cart, auth, onClearCart }) {
     const [isNameModalOpen, setIsNameModalOpen] = useState(false);
     const [tableName, setTableName] = useState("");
-    const { printKitchenTicket } = useDeviceSync();
+    const { printKitchenTicket, printBarSlip } = useDeviceSync();
 
     const cartTotal = cart.reduce(
         (sum, i) => sum + (parseFloat(i.subtotal) || 0),
@@ -45,12 +45,14 @@ export default function CheckoutTableButton({ cart, auth, onClearCart }) {
                     subtotal: item.subtotal,
                     metadata: item.metadata || { type: "unit" },
                     is_kitchen: !!item.is_kitchen,
+                    is_bar: !!item.is_bar,
                 });
             }
 
             // Kitchen items only, to the kitchen device. Never blocks opening the table.
             try {
                 printKitchenTicket({ tableName, items: cart, isUpdate: false });
+                printBarSlip({ tableName, items: cart, isUpdate: false });
             } catch (printError) {
                 console.error("Kitchen ticket failed:", printError);
             }

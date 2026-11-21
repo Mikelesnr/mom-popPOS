@@ -12,10 +12,13 @@ import { KitchenTicket } from "@/Components/Sales/KitchenTicket";
 import { ReceiptTemplate } from "@/Components/Shared/ReceiptTemplate";
 
 // Job templates other devices are allowed to ask this one to print.
+const BarSlip = (props) => <KitchenTicket {...props} station="BAR" />;
+
 const TEMPLATES = {
     bill: BillTemplate,
     receipt: ReceiptTemplate,
     kitchen: KitchenTicket,
+    bar: BarSlip,
 };
 
 /**

@@ -234,4 +234,87 @@ class KitchenAndPrintSettingsTest extends TestCase
 
         $res->assertJsonPath('peers.0.device_id', $kitchen)->assertJsonPath('peers.0.is_kitchen', true);
     }
+
+    // ------------------------------------------------------------ bar categories
+
+    public function test_a_category_can_be_a_bar_category_and_it_is_not_one_unless_asked(): void
+    {
+        $shop = $this->shop();
+        $manager = $this->staff($shop, UserRole::MANAGER);
+
+        $this->actingAs($manager)
+            ->postJson(route('inventory.categories.store'), ['name' => 'Beers', 'is_bar' => true])
+            ->assertOk()
+            ->assertJsonPath('is_bar', true)
+            ->assertJsonPath('is_kitchen', false);
+
+        $this->actingAs($manager)
+            ->postJson(route('inventory.categories.store'), ['name' => 'Grill'])
+            ->assertOk()
+            ->assertJsonPath('is_bar', false);
+    }
+
+    public function test_a_manager_can_switch_the_bar_flag_without_touching_the_kitchen_flag(): void
+    {
+        $shop = $this->shop();
+        $manager = $this->staff($shop, UserRole::SHOP_MANAGER);
+        $category = Category::create(['shop_id' => $shop->id, 'name' => 'Wings', 'slug' => 'wings', 'is_kitchen' => true]);
+
+        $this->actingAs($manager)
+            ->putJson(route('inventory.categories.update', $category), ['name' => 'Wings', 'is_bar' => true])
+            ->assertOk()
+            ->assertJsonPath('is_bar', true)
+            ->assertJsonPath('is_kitchen', true);
+
+        $this->actingAs($manager)
+            ->putJson(route('inventory.categories.update', $category), ['name' => 'Wings', 'is_bar' => false])
+            ->assertOk()
+            ->assertJsonPath('is_bar', false)
+            ->assertJsonPath('is_kitchen', true);
+    }
+
+    public function test_the_catalog_sync_and_the_device_poll_both_carry_the_bar_categories(): void
+    {
+        $shop = $this->shop();
+        $beers = Category::create(['shop_id' => $shop->id, 'name' => 'Beers', 'slug' => 'beers', 'is_bar' => true]);
+        Category::create(['shop_id' => $shop->id, 'name' => 'Grill', 'slug' => 'grill', 'is_kitchen' => true]);
+        $cashier = $this->staff($shop, UserRole::CASHIER);
+
+        $menu = collect($this->actingAs($cashier)->getJson('/inventory/sync-catalog')->assertOk()->json('menu'))->keyBy('name');
+        $this->assertTrue($menu['Beers']['is_bar']);
+        $this->assertFalse($menu['Grill']['is_bar']);
+
+        $res = $this->poll($cashier, (string) Str::uuid())->assertOk();
+        $this->assertSame([$beers->id], $res->json('shop_settings.bar_category_ids'));
+    }
+
+    public function test_the_bar_device_is_flagged_for_the_other_devices(): void
+    {
+        $shop = $this->shop();
+        $bar = (string) Str::uuid();
+        $other = (string) Str::uuid();
+
+        $this->poll($this->staff($shop, UserRole::BARTENDER), $bar, ['name' => 'Main bar', 'is_bar' => true]);
+        $res = $this->poll($this->staff($shop, UserRole::WAITER), $other);
+
+        $res->assertJsonPath('peers.0.device_id', $bar)
+            ->assertJsonPath('peers.0.is_bar', true)
+            ->assertJsonPath('peers.0.is_kitchen', false);
+    }
+
+    public function test_changing_a_bar_category_reaches_devices_on_their_next_poll(): void
+    {
+        $shop = $this->shop();
+        $manager = $this->staff($shop, UserRole::MANAGER);
+        $device = (string) Str::uuid();
+        $category = Category::create(['shop_id' => $shop->id, 'name' => 'Beers', 'slug' => 'beers']);
+
+        $this->assertSame([], $this->poll($manager, $device)->json('shop_settings.bar_category_ids'));
+
+        $this->actingAs($manager)
+            ->putJson(route('inventory.categories.update', $category), ['name' => 'Beers', 'is_bar' => true])
+            ->assertOk();
+
+        $this->assertSame([$category->id], $this->poll($manager, $device)->json('shop_settings.bar_category_ids'));
+    }
 }

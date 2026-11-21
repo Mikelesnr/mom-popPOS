@@ -52,6 +52,7 @@ class DeviceSignalController extends Controller
             'name' => ['nullable', 'string', 'max:40'],
             'can_print' => ['sometimes', 'boolean'],
             'is_kitchen' => ['sometimes', 'boolean'],
+            'is_bar' => ['sometimes', 'boolean'],
         ]);
 
         $shopId = $user->shop_id;
@@ -62,6 +63,7 @@ class DeviceSignalController extends Controller
             'name' => $data['name'] ?? 'Device ' . strtoupper(substr($deviceId, 0, 4)),
             'can_print' => (bool) ($data['can_print'] ?? false),
             'is_kitchen' => (bool) ($data['is_kitchen'] ?? false),
+            'is_bar' => (bool) ($data['is_bar'] ?? false),
             'user_name' => $user->name,
         ], self::PRESENCE_TTL);
 

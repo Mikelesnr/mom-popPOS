@@ -13,7 +13,7 @@ export default function CheckoutOrderButton({
     cartTotal,
 }) {
     const [showPayment, setShowPayment] = useState(false);
-    const { printKitchenTicket, autoPrintReceipt } = useDeviceSync();
+    const { printKitchenTicket, printBarSlip, autoPrintReceipt } = useDeviceSync();
 
     // finalizeCheckout now receives the paymentData object from modal
     const finalizeCheckout = async (paymentData) => {
@@ -52,6 +52,7 @@ export default function CheckoutOrderButton({
                     subtotal: item.subtotal,
                     metadata: item.metadata || { type: "unit" },
                     is_kitchen: !!item.is_kitchen,
+                    is_bar: !!item.is_bar,
                 });
             }
 
@@ -59,6 +60,8 @@ export default function CheckoutOrderButton({
             try {
                 // Kitchen items only, to the kitchen device (if any are in the order).
                 printKitchenTicket({ orderNo, items: cart, isUpdate: false });
+                // Bar items, to the bar device, unless the person ringing is in the bar.
+                printBarSlip({ orderNo, items: cart, isUpdate: false });
                 // The customer's receipt, only if a manager turned auto-print on.
                 autoPrintReceipt({
                     title: `Receipt #${orderNo}`,

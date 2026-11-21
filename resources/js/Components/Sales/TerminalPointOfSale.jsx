@@ -59,7 +59,7 @@ export default function TerminalPointOfSale() {
 
     // If a bill printer on another device is selected (Shop devices panel),
     // send the bill there. Returns false to fall through to local printing.
-    const { printBill, isKitchenCategory } = useDeviceSync();
+    const { printBill, isKitchenCategory, isBarCategory } = useDeviceSync();
     const printBillRemote = () =>
         printBill({
             title: activeTable ? "Table Bill" : "Receipt",
@@ -118,6 +118,7 @@ export default function TerminalPointOfSale() {
             subtotal: item.subtotal,
             metadata: item.metadata,
             is_kitchen: !!item.is_kitchen,
+            is_bar: !!item.is_bar,
             placed: item.placed,
         }));
         setCart(cartItems);
@@ -172,6 +173,9 @@ export default function TerminalPointOfSale() {
             c.products?.some((p) => p.id === product.id),
         );
         const isKitchenItem = isKitchenCategory(owner);
+        // Bar items also print a slip on the bar device (unless the person
+        // ringing them up is working in the bar).
+        const isBarItem = isBarCategory(owner);
 
         setCart((currentCart) => {
             const uniqueId = Date.now();
@@ -194,6 +198,7 @@ export default function TerminalPointOfSale() {
                     subtotal: parseFloat(price) * quantity,
                     metadata,
                     is_kitchen: isKitchenItem,
+                    is_bar: isBarItem,
                     placed: 0,
                     orderable_id: null,
                     orderable_type: null,

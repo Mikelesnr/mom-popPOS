@@ -349,6 +349,7 @@ export const updateTableItemsLocal = async (tableId, newItems) => {
                 subtotal: item.subtotal,
                 metadata: item.metadata || { type: "unit" },
                 is_kitchen: !!item.is_kitchen,
+                is_bar: !!item.is_bar,
                 synced_at: null,
             });
         }

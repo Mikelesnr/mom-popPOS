@@ -1,5 +1,6 @@
-// Kitchen / prep ticket: big, no prices, easy to read from a distance.
-// Shows who rang it up and which table or order it is for.
+// Kitchen and bar ticket: big, no prices, easy to read from a distance.
+// Shows who rang it up and which table or order it is for. The same layout is
+// used for both stations; `station` is the name printed at the top.
 
 export const KitchenTicket = ({
     shopName,
@@ -9,6 +10,7 @@ export const KitchenTicket = ({
     time,
     items = [],
     isUpdate = false,
+    station = "KITCHEN",
 }) => {
     // A table prints its name. A fast sale prints its order number.
     const label = tableName ? "TABLE" : "ORDER";
@@ -18,6 +20,9 @@ export const KitchenTicket = ({
         <div className="receipt-print p-6 max-w-sm mx-auto bg-white text-black font-mono">
             <p className="text-center text-xs uppercase tracking-widest">
                 {shopName}
+            </p>
+            <p className="text-center text-sm font-black tracking-widest mt-1">
+                {station}
             </p>
             <p className="text-center text-xs font-bold mt-2">{label}</p>
             <h2 className="text-center text-4xl font-black uppercase leading-tight">

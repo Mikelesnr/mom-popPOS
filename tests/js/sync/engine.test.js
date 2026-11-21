@@ -27,6 +27,7 @@ function signalServer() {
                 name: self.name,
                 can_print: self.can_print,
                 is_kitchen: self.is_kitchen,
+                is_bar: self.is_bar,
             });
             if (!mail.has(deviceId)) mail.set(deviceId, []);
             const res = {
@@ -258,7 +259,7 @@ describe("engine", () => {
         const stored = { terminal_shop_settings: JSON.stringify({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"] }), terminal_known_kitchens: JSON.stringify([{ id: "k", name: "Pass" }]) };
         const a = mk("aaaa1111-0000-4000-8000-000000000001", server, stored);
         const snap = a.engine.getSnapshot();
-        expect(snap.shopSettings).toEqual({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"] });
+        expect(snap.shopSettings).toEqual({ autoPrintReceipts: true, kitchenCategoryIds: ["c9"], barCategoryIds: null });
         expect(snap.knownKitchens).toEqual([{ id: "k", name: "Pass" }]);
     });
 
@@ -269,5 +270,68 @@ describe("engine", () => {
         expect(a.engine.getSnapshot().routes).toEqual({ bill: "" });
         a.engine.setRoute("bill", "dev-1");
         expect(a.engine.getSnapshot().routes.bill).toBe("dev-1");
+    });
+
+    it("the bar flag reaches the other device over the real link, is remembered, and is forgotten when switched off", async () => {
+        const server = signalServer();
+        const waiter = mk("aaaa1111-0000-4000-8000-000000000001", server);
+        const bar = mk("bbbb2222-0000-4000-8000-000000000002", server);
+        await waitFor(() => waiter.engine.getSnapshot().peers.length === 1, 12_000, "linked");
+        expect(waiter.engine.getSnapshot().peers[0].isBar).toBe(false);
+
+        bar.engine.setName("Main bar");
+        bar.engine.setBar(true);
+        await waitFor(() => waiter.engine.getSnapshot().peers[0]?.isBar === true, 6000, "waiter sees the bar");
+        expect(waiter.engine.getSnapshot().peers[0].isKitchen).toBe(false);
+        expect(waiter.engine.getSnapshot().knownBars).toEqual([{ id: "bbbb2222-0000-4000-8000-000000000002", name: "Main bar" }]);
+        expect(waiter.engine.getSnapshot().knownKitchens).toEqual([]);
+
+        bar.engine.setBar(false);
+        await waitFor(() => waiter.engine.getSnapshot().knownBars.length === 0, 6000, "forgotten");
+    }, 40_000);
+
+    it("a device can be the kitchen and the bar at once, and each list is kept separately", async () => {
+        const server = signalServer();
+        const a = mk("aaaa1111-0000-4000-8000-000000000001", server);
+        const both = mk("bbbb2222-0000-4000-8000-000000000002", server);
+        await waitFor(() => a.engine.getSnapshot().peers.length === 1, 12_000, "linked");
+        both.engine.setKitchen(true);
+        both.engine.setBar(true);
+        await waitFor(() => a.engine.getSnapshot().knownBars.length === 1 && a.engine.getSnapshot().knownKitchens.length === 1, 6000, "both known");
+        both.engine.setKitchen(false);
+        await waitFor(() => a.engine.getSnapshot().knownKitchens.length === 0, 6000, "kitchen dropped");
+        expect(a.engine.getSnapshot().knownBars.length).toBe(1);
+    }, 30_000);
+
+    it("a bar device takes print jobs even though it was never marked as a bill printer", async () => {
+        const server = signalServer();
+        const waiter = mk("aaaa1111-0000-4000-8000-000000000001", server);
+        const bar = mk("bbbb2222-0000-4000-8000-000000000002", server);
+        const printed = [];
+        bar.engine.setPrintHost({ enqueue: async (job) => printed.push(job) });
+        bar.engine.setBar(true); // canPrint stays false
+        await waitFor(() => waiter.engine.getSnapshot().peers[0]?.isBar === true, 12_000, "bar seen");
+        expect(waiter.engine.getSnapshot().peers[0].canPrint).toBe(false);
+        await waiter.engine.sendPrint(bar.id, { template: "bar", props: { tableName: "T4" } });
+        expect(printed.length).toBe(1);
+    }, 30_000);
+
+    it("applies the bar category list from the server with the other settings", async () => {
+        const server = signalServer();
+        server.settings = { auto_print_receipts: false, kitchen_category_ids: ["k1"], bar_category_ids: [3, "b2"] };
+        const a = mk("aaaa1111-0000-4000-8000-000000000001", server);
+        await waitFor(() => a.engine.getSnapshot().shopSettings.barCategoryIds?.length === 2, 6000, "applied");
+        expect(a.engine.getSnapshot().shopSettings.barCategoryIds).toEqual(["3", "b2"]);
+        expect(a.engine.getSnapshot().shopSettings.kitchenCategoryIds).toEqual(["k1"]);
+    }, 20_000);
+
+    it("restores the bar flag and known bars after a reload", async () => {
+        const server = signalServer();
+        const a = mk("aaaa1111-0000-4000-8000-000000000001", server, {
+            terminal_is_bar: "1",
+            terminal_known_bars: JSON.stringify([{ id: "b", name: "Cellar" }]),
+        });
+        expect(a.engine.getSnapshot().isBar).toBe(true);
+        expect(a.engine.getSnapshot().knownBars).toEqual([{ id: "b", name: "Cellar" }]);
     });
 });

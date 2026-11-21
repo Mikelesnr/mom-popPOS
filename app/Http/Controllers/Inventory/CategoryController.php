@@ -77,6 +77,7 @@ class CategoryController extends Controller
             ],
             'slug' => ['nullable', 'string', 'max:255'],
             'is_kitchen' => ['sometimes', 'boolean'],
+            'is_bar' => ['sometimes', 'boolean'],
         ], [
             'name.unique' => 'A category with this name already exists.',
         ]);
@@ -91,6 +92,7 @@ class CategoryController extends Controller
                 'name' => $validated['name'],
                 'slug' => Str::slug($validated['name']),
                 'is_kitchen' => (bool) ($validated['is_kitchen'] ?? false),
+                'is_bar' => (bool) ($validated['is_bar'] ?? false),
             ],
         );
 
@@ -121,6 +123,7 @@ class CategoryController extends Controller
             ],
             'slug' => ['nullable', 'string', 'max:255'],
             'is_kitchen' => ['sometimes', 'boolean'],
+            'is_bar' => ['sometimes', 'boolean'],
         ], [
             'name.unique' => 'A category with this name already exists.',
         ]);
@@ -131,6 +134,9 @@ class CategoryController extends Controller
             'is_kitchen' => array_key_exists('is_kitchen', $validated)
                 ? (bool) $validated['is_kitchen']
                 : $category->is_kitchen,
+            'is_bar' => array_key_exists('is_bar', $validated)
+                ? (bool) $validated['is_bar']
+                : $category->is_bar,
         ]);
 
         ShopPrintSettings::forget($category->shop_id);
